@@ -26,6 +26,10 @@ function app() {
       const q = this.questions[this.currentIdx];
       return q ? q.options : [];
     },
+    get currentPrompt() {
+      const q = this.questions[this.currentIdx];
+      return q ? q.prompt : '';
+    },
 
     async init() {
       const m = window.location.pathname.match(/\/r\/([0-9a-f]{32})\/?$/);

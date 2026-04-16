@@ -102,7 +102,7 @@
 
       <template x-if="questions.length > 0">
         <div>
-          <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6">Qual destas opções mais combina com você?</h2>
+          <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
           <div class="space-y-3">
             <template x-for="opt in currentOptions" :key="opt.value + opt.label">
               <button

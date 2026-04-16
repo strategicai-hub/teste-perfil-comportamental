@@ -1,6 +1,7 @@
 QUESTIONS = [
     {
         "id": "q1",
+        "prompt": "Eu sou...",
         "options": [
             {"label": "Idealista, criativo e visionário", "value": "aguia"},
             {"label": "Amigável, espiritual e benéfico", "value": "gato"},
@@ -10,6 +11,7 @@ QUESTIONS = [
     },
     {
         "id": "q2",
+        "prompt": "Eu gosto de...",
         "options": [
             {"label": "Ser piloto", "value": "tubarao"},
             {"label": "Conversar com os passageiros", "value": "gato"},
@@ -19,6 +21,7 @@ QUESTIONS = [
     },
     {
         "id": "q3",
+        "prompt": "Se você quiser se dar bem comigo...",
         "options": [
             {"label": "Me dê liberdade", "value": "aguia"},
             {"label": "Me deixe saber o que pensa de mim", "value": "gato"},
@@ -28,6 +31,7 @@ QUESTIONS = [
     },
     {
         "id": "q4",
+        "prompt": "Para conseguir bons resultados é preciso...",
         "options": [
             {"label": "Inovar", "value": "aguia"},
             {"label": "Focar no essencial", "value": "tubarao"},
@@ -37,6 +41,7 @@ QUESTIONS = [
     },
     {
         "id": "q5",
+        "prompt": "Eu me divirto quando...",
         "options": [
             {"label": "Estou me desafiando", "value": "tubarao"},
             {"label": "Tenho novidades", "value": "aguia"},
@@ -46,6 +51,7 @@ QUESTIONS = [
     },
     {
         "id": "q6",
+        "prompt": "Eu penso que…",
         "options": [
             {"label": "É importante fazer junto", "value": "gato"},
             {"label": "É importante competir", "value": "tubarao"},
@@ -55,6 +61,7 @@ QUESTIONS = [
     },
     {
         "id": "q7",
+        "prompt": "Minha preocupação é…",
         "options": [
             {"label": "Demonstrar a ideia geral", "value": "aguia"},
             {"label": "Fazer com que as pessoas gostem", "value": "gato"},
@@ -64,6 +71,7 @@ QUESTIONS = [
     },
     {
         "id": "q8",
+        "prompt": "Eu prefiro…",
         "options": [
             {"label": "Perguntas a respostas", "value": "aguia"},
             {"label": "Ter todos os detalhes", "value": "lobo"},
@@ -73,6 +81,7 @@ QUESTIONS = [
     },
     {
         "id": "q9",
+        "prompt": "Eu gosto de…",
         "options": [
             {"label": "Fazer progresso", "value": "tubarao"},
             {"label": "Construir relacionamentos", "value": "gato"},
@@ -82,6 +91,7 @@ QUESTIONS = [
     },
     {
         "id": "q10",
+        "prompt": "Eu gosto de chegar…",
         "options": [
             {"label": "Na frente", "value": "tubarao"},
             {"label": "Junto", "value": "gato"},
@@ -91,6 +101,7 @@ QUESTIONS = [
     },
     {
         "id": "q11",
+        "prompt": "Um ótimo dia para mim é quando…",
         "options": [
             {"label": "Consigo produzir resultados", "value": "tubarao"},
             {"label": "Trabalho bem com meu time", "value": "gato"},
@@ -100,6 +111,7 @@ QUESTIONS = [
     },
     {
         "id": "q12",
+        "prompt": "Minha filosofia de vida é...",
         "options": [
             {"label": "Faça acontecer", "value": "tubarao"},
             {"label": "Faça o bem para os outros", "value": "gato"},
@@ -109,6 +121,7 @@ QUESTIONS = [
     },
     {
         "id": "q13",
+        "prompt": "Eu vejo o futuro como...",
         "options": [
             {"label": "Uma jornada a ser descoberta e explorada", "value": "aguia"},
             {"label": "Uma jornada para se construir memórias", "value": "gato"},
@@ -118,6 +131,7 @@ QUESTIONS = [
     },
     {
         "id": "q14",
+        "prompt": "Eu sempre gostei de…",
         "options": [
             {"label": "Explorar", "value": "aguia"},
             {"label": "Evitar surpresas", "value": "lobo"},
@@ -127,6 +141,7 @@ QUESTIONS = [
     },
     {
         "id": "q15",
+        "prompt": "Eu gosto de mudanças se…",
         "options": [
             {"label": "Me der uma vantagem competitiva", "value": "tubarao"},
             {"label": "For bom para o time", "value": "gato"},
@@ -136,6 +151,7 @@ QUESTIONS = [
     },
     {
         "id": "q16",
+        "prompt": "Não existe nada de errado em…",
         "options": [
             {"label": "Liderar e assumir o controle", "value": "tubarao"},
             {"label": "Colocar os outros na frente", "value": "gato"},
@@ -145,6 +161,7 @@ QUESTIONS = [
     },
     {
         "id": "q17",
+        "prompt": "Eu gosto de buscar conselhos de…",
         "options": [
             {"label": "Pessoas bem-sucedidas", "value": "tubarao"},
             {"label": "Pessoas amigáveis e empáticas", "value": "gato"},
@@ -154,6 +171,7 @@ QUESTIONS = [
     },
     {
         "id": "q18",
+        "prompt": "Meu lema é…",
         "options": [
             {"label": "Fazer o que precisa ser feito", "value": "tubarao"},
             {"label": "Fazer bem-feito", "value": "lobo"},
@@ -163,6 +181,7 @@ QUESTIONS = [
     },
     {
         "id": "q19",
+        "prompt": "Eu gosto de…",
         "options": [
             {"label": "Oportunidades de fazer diferente", "value": "aguia"},
             {"label": "Promover a ordem e sistematizar processos", "value": "lobo"},
@@ -172,6 +191,7 @@ QUESTIONS = [
     },
     {
         "id": "q20",
+        "prompt": "Tempo para mim é…",
         "options": [
             {"label": "Algo que detesto desperdiçar", "value": "tubarao"},
             {"label": "Algo que devo organizar", "value": "lobo"},
@@ -181,6 +201,7 @@ QUESTIONS = [
     },
     {
         "id": "q21",
+        "prompt": "Se eu fosse bilionário…",
         "options": [
             {"label": "Eu ajudaria muitas pessoas", "value": "gato"},
             {"label": "Eu teria muito mais segurança e estabilidade", "value": "lobo"},
@@ -190,6 +211,7 @@ QUESTIONS = [
     },
     {
         "id": "q22",
+        "prompt": "Eu acredito que…",
         "options": [
             {"label": "O destino é mais importante que a jornada", "value": "tubarao"},
             {"label": "A jornada é mais importante que o destino", "value": "aguia"},
@@ -199,6 +221,7 @@ QUESTIONS = [
     },
     {
         "id": "q23",
+        "prompt": "Ao conversar com alguém, creio que...",
         "options": [
             {"label": "É preciso ser objetivo ao falar", "value": "tubarao"},
             {"label": "É preciso ser claro e organizar as ideias ao falar", "value": "lobo"},
@@ -208,6 +231,7 @@ QUESTIONS = [
     },
     {
         "id": "q24",
+        "prompt": "Quando tenho que decidir, penso que…",
         "options": [
             {"label": "É melhor prudência do que arrependimento", "value": "lobo"},
             {"label": "É melhor ser original do que copiar outras ideias", "value": "aguia"},
@@ -217,6 +241,7 @@ QUESTIONS = [
     },
     {
         "id": "q25",
+        "prompt": "Eu sinto que sou melhor em…",
         "options": [
             {"label": "Realizar o que precisa ser feito", "value": "tubarao"},
             {"label": "Organizar e planejar o processo do que deve ser feito", "value": "lobo"},
@@ -226,6 +251,7 @@ QUESTIONS = [
     },
     {
         "id": "q26",
+        "prompt": "Eu gosto quando…",
         "options": [
             {"label": "Sou desafiado a alcançar objetivos", "value": "tubarao"},
             {"label": "Sou reconhecido e sei que contribuí para o time", "value": "gato"},
@@ -235,6 +261,7 @@ QUESTIONS = [
     },
     {
         "id": "q27",
+        "prompt": "Eu sei que tenho dificuldades para...",
         "options": [
             {"label": "Ter paciência", "value": "tubarao"},
             {"label": "Ter que competir", "value": "gato"},
@@ -244,6 +271,7 @@ QUESTIONS = [
     },
     {
         "id": "q28",
+        "prompt": "Eu não gosto de pessoas que...",
         "options": [
             {"label": "São insensíveis ou rudes", "value": "gato"},
             {"label": "Falam demais e não vão ao ponto", "value": "tubarao"},
@@ -253,6 +281,7 @@ QUESTIONS = [
     },
     {
         "id": "q29",
+        "prompt": "Eu não gosto quando...",
         "options": [
             {"label": "Tenho que lidar com pessoas emotivas", "value": "tubarao"},
             {"label": "Tenho que me expor ou me sinto julgado", "value": "gato"},
@@ -262,6 +291,7 @@ QUESTIONS = [
     },
     {
         "id": "q30",
+        "prompt": "Eu posso me estressar se...",
         "options": [
             {"label": "Tiver que participar de debates abstratos", "value": "tubarao"},
             {"label": "Tiver que lidar com muita pressão", "value": "gato"},
@@ -277,6 +307,10 @@ VALID_ARCHETYPES = {"aguia", "gato", "lobo", "tubarao"}
 
 def public_questions():
     return [
-        {"id": q["id"], "options": [{"label": o["label"], "value": o["value"]} for o in q["options"]]}
+        {
+            "id": q["id"],
+            "prompt": q["prompt"],
+            "options": [{"label": o["label"], "value": o["value"]} for o in q["options"]],
+        }
         for q in QUESTIONS
     ]
