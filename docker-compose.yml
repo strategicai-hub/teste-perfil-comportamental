@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  perfil-comportamental:
+    image: ghcr.io/strategicai-hub/teste-perfil-comportamental:latest
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks:
+      - network_public
+    environment:
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - DATABASE_URL=sqlite:////data/app.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}
+      - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - UAZAPI_BASE_URL=${UAZAPI_BASE_URL}
+      - UAZAPI_TOKEN=${UAZAPI_TOKEN}
+      - UAZAPI_INSTANCE=${UAZAPI_INSTANCE}
+      - ALERT_PHONE=${ALERT_PHONE}
+    volumes:
+      - perfil_data:/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+        - "traefik.http.routers.perfil-comportamental.rule=Host(`teste.strategicai.com.br`) && PathPrefix(`/perfil-comportamental`)"
+        - "traefik.http.routers.perfil-comportamental.entrypoints=websecure"
+        - "traefik.http.routers.perfil-comportamental.tls=true"
+        - "traefik.http.routers.perfil-comportamental.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.perfil-comportamental.middlewares=perfil-strip"
+        - "traefik.http.middlewares.perfil-strip.stripprefix.prefixes=/perfil-comportamental"
+        - "traefik.http.services.perfil-comportamental.loadbalancer.server.port=8000"
+
+volumes:
+  perfil_data:
+
+networks:
+  network_public:
+    external: true

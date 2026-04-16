@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    (function () {
+      var p = window.location.pathname;
+      var m = p.match(/^(.*?)\/r\/[0-9a-f]{32}\/?$/);
+      var base;
+      if (m) {
+        base = m[1] || '/';
+        if (!base.endsWith('/')) base += '/';
+      } else {
+        base = p.endsWith('/') ? p : p + '/';
+      }
+      var origin = window.location.origin;
+      document.write('<base href="' + origin + base + '">');
+    })();
+  </script>
+  <title>Teste de Perfil Comportamental — Strategic AI</title>
+  <meta name="description" content="Descubra seu perfil comportamental (Tubarão, Lobo, Águia ou Gato) e receba uma análise personalizada por IA.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800" x-data="app()" x-init="init()">
+
+  <!-- Seção 1: Captura de Lead -->
+  <section id="secao-lead" x-show="view === 'form'" x-transition class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="max-w-xl w-full bg-white rounded-2xl shadow-lg p-8 md:p-10">
+      <h1 class="text-3xl md:text-4xl font-bold text-teal-700 mb-2">Teste de Perfil Comportamental</h1>
+      <p class="text-slate-600 mb-6">Descubra qual é o seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato — e receba uma análise personalizada gratuita.</p>
+
+      <form @submit.prevent="submitLead()" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Nome</label>
+            <input x-model="lead.nome" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Sobrenome</label>
+            <input x-model="lead.sobrenome" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">WhatsApp (com DDD)</label>
+          <input x-model="lead.whatsapp" type="tel" required placeholder="(11) 99999-9999" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
+          <input x-model="lead.email" type="email" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Profissão</label>
+          <input x-model="lead.profissao" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Onde nos conheceu?</label>
+          <select x-model="lead.origem" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none bg-white">
+            <option value="">Selecione...</option>
+            <option value="Instagram">Instagram</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Google">Google</option>
+            <option value="Indicação">Indicação</option>
+            <option value="YouTube">YouTube</option>
+            <option value="Evento">Evento</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
+        <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+
+        <button type="submit" :disabled="loading" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-3 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed">
+          <span x-show="!loading">Começar o teste</span>
+          <span x-show="loading">Carregando...</span>
+        </button>
+
+        <p class="text-xs text-slate-500 text-center mt-2">Ao continuar você concorda em receber o resultado por e-mail e WhatsApp.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- Seção 2: Wizard de Perguntas -->
+  <section id="secao-wizard" x-show="view === 'wizard'" x-transition class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="max-w-2xl w-full bg-white rounded-2xl shadow-lg p-6 md:p-10">
+      <div class="mb-6">
+        <div class="flex justify-between text-sm text-slate-500 mb-2">
+          <span x-text="`Pergunta ${currentIdx + 1} de ${questions.length}`"></span>
+          <span x-text="`${Math.round(((currentIdx + 1) / questions.length) * 100)}%`"></span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2">
+          <div class="bg-teal-600 h-2 rounded-full transition-all" :style="`width: ${((currentIdx + 1) / questions.length) * 100}%`"></div>
+        </div>
+      </div>
+
+      <template x-if="questions.length > 0">
+        <div>
+          <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6">Qual destas opções mais combina com você?</h2>
+          <div class="space-y-3">
+            <template x-for="opt in currentOptions" :key="opt.value + opt.label">
+              <button
+                @click="chooseOption(opt.value)"
+                :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
+                class="w-full text-left border-2 rounded-xl px-4 py-4 transition">
+                <span x-text="opt.label" class="text-slate-800"></span>
+              </button>
+            </template>
+          </div>
+
+          <div class="flex justify-between items-center mt-8">
+            <button @click="prevQuestion()" :disabled="currentIdx === 0" class="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-30">← Voltar</button>
+            <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+            <template x-if="currentIdx < questions.length - 1">
+              <button @click="nextQuestion()" :disabled="!answers[currentQid]" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Avançar →</button>
+            </template>
+            <template x-if="currentIdx === questions.length - 1">
+              <button @click="submitTest()" :disabled="!answers[currentQid] || loading" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+                <span x-show="!loading">Ver meu resultado</span>
+                <span x-show="loading">Calculando...</span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- Seção 3: Resultado + Chat -->
+  <section id="secao-resultado" x-show="view === 'result'" x-transition class="min-h-screen px-4 py-12">
+    <div class="max-w-4xl mx-auto">
+      <div class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
+        <h2 class="text-2xl md:text-3xl font-bold text-teal-700 mb-2 text-center">Seu Perfil Comportamental</h2>
+        <p class="text-slate-600 text-center mb-8">Aqui estão seus quatro arquétipos, do mais ao menos dominante.</p>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6" x-show="result">
+          <template x-for="a in archetypesOrdered()" :key="a.key">
+            <div class="flex flex-col items-center">
+              <div class="w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center mb-3" :style="`background-color: ${a.bg}`">
+                <img :src="`assets/${a.key}.png`" :alt="a.label" class="w-16 h-16 md:w-20 md:h-20 object-contain" onerror="this.style.display='none'">
+              </div>
+              <div class="font-bold text-slate-700 tracking-wide" x-text="a.label.toUpperCase()"></div>
+              <div class="text-3xl md:text-4xl font-extrabold text-slate-800 mt-1" x-text="`${result[a.key]}%`"></div>
+            </div>
+          </template>
+        </div>
+
+        <div class="text-center mt-8">
+          <button @click="retake()" :disabled="loading" class="text-teal-700 hover:text-teal-900 font-semibold underline disabled:opacity-50">
+            Refazer o teste
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat -->
+      <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+        <h3 class="text-xl font-bold text-teal-700 mb-1">Análise com o Analista Comportamental</h3>
+        <p class="text-slate-600 text-sm mb-6">Converse com nossa IA especializada para entender seu perfil em profundidade.</p>
+
+        <div x-ref="chatBox" class="space-y-3 h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50">
+          <template x-for="(m, i) in chat" :key="i">
+            <div :class="m.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+              <div :class="m.role === 'user' ? 'bg-teal-700 text-white' : 'bg-white border border-slate-200 text-slate-800'" class="rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(m.content)"></div>
+            </div>
+          </template>
+          <div x-show="streaming" class="flex justify-start">
+            <div class="bg-white border border-slate-200 text-slate-800 rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(streamBuffer) || '<span class=\'text-slate-400\'>digitando...</span>'"></div>
+          </div>
+        </div>
+
+        <form @submit.prevent="sendMessage()" class="mt-4 flex gap-2">
+          <input x-model="input" :disabled="streaming" type="text" placeholder="Digite sua mensagem..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none disabled:bg-slate-100">
+          <button type="submit" :disabled="streaming || !input.trim()" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-5 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Enviar</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script src="static/app.js"></script>
+</body>
+</html>
