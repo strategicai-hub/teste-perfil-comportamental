@@ -21,6 +21,7 @@ APP_DIR = Path(__file__).parent.parent
 STATIC_DIR = APP_DIR / "static"
 ASSETS_DIR = APP_DIR / "assets"
 INDEX_FILE = STATIC_DIR / "index.html"
+FAVICON_FILE = ASSETS_DIR / "favicon-sai.png"
 
 app = FastAPI(title="Teste de Perfil Comportamental")
 
@@ -39,6 +40,11 @@ if ASSETS_DIR.exists():
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(FAVICON_FILE, media_type="image/png")
 
 
 @app.get("/")
