@@ -1,16 +1,27 @@
 function app() {
   return {
-    view: 'form',
+    view: 'login',
     loading: false,
     error: '',
 
-    lead: { nome: '', sobrenome: '', whatsapp: '', email: '', profissao: '', origem: '' },
-    token: null,
+    user: null,
 
+    authForm: { email: '', password: '' },
+    registerForm: { nome: '', sobrenome: '', whatsapp: '', email: '', profissao: '', origem: '', password: '' },
+    forgotSent: false,
+
+    resetToken: null,
+    resetDone: false,
+    resetForm: { newPassword: '', confirmPassword: '' },
+
+    tests: [],
+    selectedTest: null,
+    history: [],
+
+    token: null,
     questions: [],
     currentIdx: 0,
     answers: {},
-
     result: null,
 
     chat: [],
@@ -31,85 +42,244 @@ function app() {
       return q ? q.prompt : '';
     },
 
+    showHeader() {
+      return ['dashboard', 'test-detail', 'wizard', 'result'].includes(this.view);
+    },
+
     async init() {
-      const m = window.location.pathname.match(/\/r\/([0-9a-f]{32})\/?$/);
-      if (m) {
-        this.token = m[1];
-        localStorage.setItem('tpc_token', this.token);
-        await this.loadSaved();
-      } else {
-        const saved = localStorage.getItem('tpc_token');
-        if (saved) {
-          this.token = saved;
-          await this.loadSaved(true);
-        }
+      const path = window.location.pathname;
+      const search = new URLSearchParams(window.location.search);
+      if (/\/reset\/?$/.test(path) && search.get('token')) {
+        this.resetToken = search.get('token');
+        this.view = 'reset';
+        return;
       }
+      await this.checkSession();
     },
 
-    async loadSaved(silent = false) {
+    async checkSession() {
       try {
-        const r = await fetch(`api/lead/${this.token}`);
-        if (!r.ok) {
-          if (!silent) this.view = 'form';
-          return;
-        }
-        const data = await r.json();
-        this.lead = { ...this.lead, ...data.lead };
-        if (data.result) {
-          this.answers = data.answers || {};
-          this.result = data.result;
-          this.chat = data.chat_history || [];
-          this.view = 'result';
-          if (this.chat.length === 0) {
-            await this.initChat();
-          }
-        } else if (Object.keys(data.answers || {}).length > 0) {
-          await this.loadQuestions();
-          this.answers = data.answers;
-          this.view = 'wizard';
-          const firstUnanswered = this.questions.findIndex(q => !this.answers[q.id]);
-          this.currentIdx = firstUnanswered === -1 ? this.questions.length - 1 : firstUnanswered;
+        const r = await fetch('api/auth/me', { credentials: 'same-origin' });
+        if (r.ok) {
+          const data = await r.json();
+          this.user = data.user;
+          await this.goDashboard();
         } else {
-          await this.loadQuestions();
-          this.view = 'wizard';
+          this.view = 'login';
         }
-      } catch (e) {
-        console.error(e);
-        if (!silent) this.view = 'form';
+      } catch (_) {
+        this.view = 'login';
       }
     },
 
-    async loadQuestions() {
-      if (this.questions.length > 0) return;
-      const r = await fetch('api/questions');
-      const data = await r.json();
-      this.questions = data.questions;
+    goView(view) {
+      this.error = '';
+      this.view = view;
+      if (view === 'forgot') this.forgotSent = false;
     },
 
-    async submitLead() {
+    async doLogin() {
       this.error = '';
       this.loading = true;
       try {
-        const r = await fetch('api/lead', {
+        const r = await fetch('api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.lead),
+          credentials: 'same-origin',
+          body: JSON.stringify(this.authForm),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
-          throw new Error(err.detail || 'Erro ao enviar dados');
+          throw new Error(err.detail || 'E-mail ou senha inválidos');
         }
         const data = await r.json();
-        this.token = data.token;
-        localStorage.setItem('tpc_token', this.token);
-        await this.loadQuestions();
-        this.view = 'wizard';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        this.user = data.user;
+        this.authForm = { email: '', password: '' };
+        await this.goDashboard();
       } catch (e) {
         this.error = e.message || 'Erro inesperado';
       } finally {
         this.loading = false;
       }
+    },
+
+    async doRegister() {
+      this.error = '';
+      this.loading = true;
+      try {
+        const r = await fetch('api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(this.registerForm),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          let msg = 'Erro ao criar conta';
+          if (typeof err.detail === 'string') msg = err.detail;
+          else if (Array.isArray(err.detail)) msg = err.detail.map(d => d.msg).join(' · ');
+          throw new Error(msg);
+        }
+        const data = await r.json();
+        this.user = data.user;
+        this.registerForm = { nome: '', sobrenome: '', whatsapp: '', email: '', profissao: '', origem: '', password: '' };
+        await this.goDashboard();
+      } catch (e) {
+        this.error = e.message || 'Erro inesperado';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async logout() {
+      try { await fetch('api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
+      this.user = null;
+      this.tests = [];
+      this.selectedTest = null;
+      this.history = [];
+      this.token = null;
+      this.result = null;
+      this.chat = [];
+      this.answers = {};
+      this.view = 'login';
+    },
+
+    async doForgot() {
+      this.error = '';
+      this.loading = true;
+      try {
+        const r = await fetch('api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: this.authForm.email }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || 'Erro ao processar solicitação');
+        }
+        this.forgotSent = true;
+      } catch (e) {
+        this.error = e.message || 'Erro inesperado';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async doReset() {
+      this.error = '';
+      if (this.resetForm.newPassword !== this.resetForm.confirmPassword) {
+        this.error = 'As senhas não coincidem';
+        return;
+      }
+      if (this.resetForm.newPassword.length < 8) {
+        this.error = 'A senha precisa ter pelo menos 8 caracteres';
+        return;
+      }
+      this.loading = true;
+      try {
+        const r = await fetch('api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: this.resetToken, password: this.resetForm.newPassword }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || 'Link inválido ou expirado');
+        }
+        this.resetDone = true;
+      } catch (e) {
+        this.error = e.message || 'Erro inesperado';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async goDashboard() {
+      this.error = '';
+      this.view = 'dashboard';
+      await this.loadTests();
+    },
+
+    async loadTests() {
+      try {
+        const r = await fetch('api/tests', { credentials: 'same-origin' });
+        if (!r.ok) { this.view = 'login'; return; }
+        const data = await r.json();
+        this.tests = data.tests;
+      } catch (_) { /* ignore */ }
+    },
+
+    async openTest(testId) {
+      this.error = '';
+      try {
+        const r = await fetch(`api/tests/${testId}/history`, { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const data = await r.json();
+        this.selectedTest = data.test;
+        this.history = data.history;
+        this.view = 'test-detail';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        this.error = e.message || 'Erro ao abrir teste';
+      }
+    },
+
+    async startNewTest() {
+      if (!this.selectedTest || !this.selectedTest.ativo) return;
+      this.error = '';
+      this.loading = true;
+      try {
+        const r = await fetch(`api/tests/${this.selectedTest.id}/start`, {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || 'Erro ao iniciar teste');
+        }
+        const data = await r.json();
+        this.token = data.token;
+        this.answers = {};
+        this.result = null;
+        this.chat = [];
+        this.currentIdx = 0;
+        await this.loadQuestions();
+        this.view = 'wizard';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        this.error = e.message || 'Erro ao iniciar teste';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async openResult(token) {
+      this.error = '';
+      this.loading = true;
+      try {
+        const r = await fetch(`api/lead/${token}`, { credentials: 'same-origin' });
+        if (!r.ok) throw new Error('Não foi possível carregar o resultado');
+        const data = await r.json();
+        this.token = token;
+        this.answers = data.answers || {};
+        this.result = data.result;
+        this.chat = data.chat_history || [];
+        if (!this.result) throw new Error('Teste não concluído');
+        this.view = 'result';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (this.chat.length === 0) await this.initChat();
+      } catch (e) {
+        this.error = e.message || 'Erro';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async loadQuestions() {
+      if (this.questions.length > 0) return;
+      const r = await fetch('api/questions', { credentials: 'same-origin' });
+      const data = await r.json();
+      this.questions = data.questions;
     },
 
     async chooseOption(value) {
@@ -119,16 +289,14 @@ function app() {
         await fetch(`api/lead/${this.token}/answers`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({ answers: { [this.currentQid]: value } }),
         });
-      } catch (e) { /* best-effort autosave */ }
+      } catch (e) { /* best-effort */ }
     },
 
     nextQuestion() {
-      if (!this.answers[this.currentQid]) {
-        this.error = 'Selecione uma opção para avançar';
-        return;
-      }
+      if (!this.answers[this.currentQid]) { this.error = 'Selecione uma opção para avançar'; return; }
       if (this.currentIdx < this.questions.length - 1) {
         this.currentIdx++;
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -143,14 +311,11 @@ function app() {
     },
 
     async submitTest() {
-      if (!this.answers[this.currentQid]) {
-        this.error = 'Selecione uma opção antes de enviar';
-        return;
-      }
+      if (!this.answers[this.currentQid]) { this.error = 'Selecione uma opção antes de enviar'; return; }
       this.error = '';
       this.loading = true;
       try {
-        const r = await fetch(`api/lead/${this.token}/submit`, { method: 'POST' });
+        const r = await fetch(`api/lead/${this.token}/submit`, { method: 'POST', credentials: 'same-origin' });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           throw new Error(err.detail || 'Erro ao calcular resultado');
@@ -169,14 +334,14 @@ function app() {
 
     async initChat() {
       try {
-        const r = await fetch(`api/chat/${this.token}/init`, { method: 'POST' });
+        const r = await fetch(`api/chat/${this.token}/init`, { method: 'POST', credentials: 'same-origin' });
         if (!r.ok) return;
         const data = await r.json();
         if (data.message) {
           this.chat.push({ role: 'assistant', content: data.message });
           this.scrollChat();
         }
-      } catch (e) { /* ignore */ }
+      } catch (_) { /* ignore */ }
     },
 
     async sendMessage() {
@@ -192,6 +357,7 @@ function app() {
         const r = await fetch(`api/chat/${this.token}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({ content }),
         });
         if (!r.ok || !r.body) throw new Error('Falha ao conectar ao analista');
@@ -199,7 +365,6 @@ function app() {
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -214,9 +379,7 @@ function app() {
       } catch (e) {
         this.streamBuffer += `\n[Erro: ${e.message}]`;
       } finally {
-        if (this.streamBuffer) {
-          this.chat.push({ role: 'assistant', content: this.streamBuffer });
-        }
+        if (this.streamBuffer) this.chat.push({ role: 'assistant', content: this.streamBuffer });
         this.streamBuffer = '';
         this.streaming = false;
         this.scrollChat();
@@ -247,27 +410,9 @@ function app() {
       });
     },
 
-    async retake() {
-      if (!confirm('Deseja refazer o teste? Seu resultado atual ficará salvo.')) return;
-      this.loading = true;
-      try {
-        const r = await fetch(`api/lead/${this.token}/retake`, { method: 'POST' });
-        if (!r.ok) throw new Error('Erro ao refazer');
-        const data = await r.json();
-        this.token = data.token;
-        localStorage.setItem('tpc_token', this.token);
-        this.answers = {};
-        this.result = null;
-        this.chat = [];
-        this.currentIdx = 0;
-        await this.loadQuestions();
-        this.view = 'wizard';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } catch (e) {
-        this.error = e.message;
-      } finally {
-        this.loading = false;
-      }
+    goBackToTest() {
+      if (this.selectedTest) this.openTest(this.selectedTest.id);
+      else this.goDashboard();
     },
 
     archetypesOrdered() {
@@ -280,6 +425,14 @@ function app() {
       return Object.keys(meta)
         .map(k => ({ key: k, ...meta[k], value: this.result ? this.result[k] : 0 }))
         .sort((a, b) => b.value - a.value);
+    },
+
+    formatDate(iso) {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch (_) { return iso; }
     },
 
     renderMd(text) {

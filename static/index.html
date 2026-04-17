@@ -6,7 +6,7 @@
   <script>
     (function () {
       var p = window.location.pathname;
-      var m = p.match(/^(.*?)\/r\/[0-9a-f]{32}\/?$/);
+      var m = p.match(/^(.*?)\/reset\/?$/);
       var base;
       if (m) {
         base = m[1] || '/';
@@ -18,8 +18,8 @@
       document.write('<base href="' + origin + base + '">');
     })();
   </script>
-  <title>Teste de Perfil Comportamental — Strategic AI</title>
-  <meta name="description" content="Descubra seu perfil comportamental (Tubarão, Lobo, Águia ou Gato) e receba uma análise personalizada por IA.">
+  <title>Strategic AI — Testes Comportamentais</title>
+  <meta name="description" content="Plataforma de testes comportamentais Strategic AI.">
   <link rel="icon" type="image/png" href="assets/favicon-sai.png">
   <link rel="shortcut icon" type="image/png" href="assets/favicon-sai.png">
   <link rel="apple-touch-icon" href="assets/favicon-sai.png">
@@ -31,168 +31,373 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', system-ui, sans-serif; }
+    [x-cloak] { display: none !important; }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800" x-data="app()" x-init="init()">
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col" x-data="app()" x-init="init()" x-cloak>
 
-  <!-- Seção 1: Captura de Lead -->
-  <section id="secao-lead" x-show="view === 'form'" x-transition class="min-h-screen flex items-center justify-center px-4 py-12">
-    <div class="max-w-xl w-full bg-white rounded-2xl shadow-lg p-8 md:p-10">
-      <div class="flex justify-center mb-6">
-        <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-16 w-auto">
+  <!-- Header (só aparece em views logadas) -->
+  <header x-show="showHeader()" class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <button type="button" @click="goDashboard()" class="flex items-center gap-3 font-semibold text-slate-900 hover:opacity-80">
+        <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+        <span>Testes Comportamentais</span>
+      </button>
+      <div class="flex items-center gap-3 text-sm">
+        <span class="text-slate-600 hidden sm:inline" x-text="user ? (user.nome + ' ' + user.sobrenome) : ''"></span>
+        <button @click="logout()" class="rounded-md bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-800">Sair</button>
       </div>
-      <h1 class="text-3xl md:text-4xl font-bold text-teal-700 mb-2">Teste de Perfil Comportamental</h1>
-      <p class="text-slate-600 mb-6">Descubra qual é o seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato — e receba uma análise personalizada gratuita.</p>
-
-      <form @submit.prevent="submitLead()" class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Nome</label>
-            <input x-model="lead.nome" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Sobrenome</label>
-            <input x-model="lead.sobrenome" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">WhatsApp (com DDD)</label>
-          <input x-model="lead.whatsapp" type="tel" required placeholder="(11) 99999-9999" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
-          <input x-model="lead.email" type="email" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Profissão</label>
-          <input x-model="lead.profissao" type="text" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Onde nos conheceu?</label>
-          <select x-model="lead.origem" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none bg-white">
-            <option value="">Selecione...</option>
-            <option value="Instagram">Instagram</option>
-            <option value="LinkedIn">LinkedIn</option>
-            <option value="Google">Google</option>
-            <option value="Indicação">Indicação</option>
-            <option value="YouTube">YouTube</option>
-            <option value="Evento">Evento</option>
-            <option value="Outro">Outro</option>
-          </select>
-        </div>
-
-        <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
-
-        <button type="submit" :disabled="loading" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-3 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed">
-          <span x-show="!loading">Começar o teste</span>
-          <span x-show="loading">Carregando...</span>
-        </button>
-
-        <p class="text-xs text-slate-500 text-center mt-2">Ao continuar você concorda em receber o resultado por e-mail e WhatsApp.</p>
-      </form>
     </div>
-  </section>
+  </header>
 
-  <!-- Seção 2: Wizard de Perguntas -->
-  <section id="secao-wizard" x-show="view === 'wizard'" x-transition class="min-h-screen flex items-center justify-center px-4 py-12">
-    <div class="max-w-2xl w-full bg-white rounded-2xl shadow-lg p-6 md:p-10">
-      <div class="flex justify-center mb-6">
-        <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-14 w-auto">
-      </div>
-      <div class="mb-6">
-        <div class="flex justify-between text-sm text-slate-500 mb-2">
-          <span x-text="`Pergunta ${currentIdx + 1} de ${questions.length}`"></span>
-          <span x-text="`${Math.round(((currentIdx + 1) / questions.length) * 100)}%`"></span>
-        </div>
-        <div class="w-full bg-slate-200 rounded-full h-2">
-          <div class="bg-teal-600 h-2 rounded-full transition-all" :style="`width: ${((currentIdx + 1) / questions.length) * 100}%`"></div>
-        </div>
-      </div>
+  <main class="flex-1">
 
-      <template x-if="questions.length > 0">
-        <div>
-          <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
-          <div class="space-y-3">
-            <template x-for="opt in currentOptions" :key="opt.value + opt.label">
-              <button
-                @click="chooseOption(opt.value)"
-                :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
-                class="w-full text-left border-2 rounded-xl px-4 py-4 transition">
-                <span x-text="opt.label" class="text-slate-800"></span>
-              </button>
-            </template>
+    <!-- LOGIN -->
+    <section x-show="view === 'login'" class="flex items-center justify-center px-4 py-12">
+      <div class="w-full max-w-sm card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+          <span class="font-semibold text-slate-900">Testes Comportamentais</span>
+        </div>
+        <h1 class="text-xl font-semibold">Entrar</h1>
+        <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
+        <form @submit.prevent="doLogin()" class="space-y-4">
+          <div>
+            <label class="label" for="login-email">E-mail</label>
+            <input id="login-email" type="email" required x-model="authForm.email" class="input">
           </div>
-
-          <div class="flex justify-between items-center mt-8">
-            <button @click="prevQuestion()" :disabled="currentIdx === 0" class="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-30">← Voltar</button>
-            <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
-            <template x-if="currentIdx < questions.length - 1">
-              <button @click="nextQuestion()" :disabled="!answers[currentQid]" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Avançar →</button>
-            </template>
-            <template x-if="currentIdx === questions.length - 1">
-              <button @click="submitTest()" :disabled="!answers[currentQid] || loading" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
-                <span x-show="!loading">Ver meu resultado</span>
-                <span x-show="loading">Calculando...</span>
-              </button>
-            </template>
+          <div>
+            <label class="label" for="login-pass">Senha</label>
+            <input id="login-pass" type="password" required x-model="authForm.password" class="input">
           </div>
-        </div>
-      </template>
-    </div>
-  </section>
-
-  <!-- Seção 3: Resultado + Chat -->
-  <section id="secao-resultado" x-show="view === 'result'" x-transition class="min-h-screen px-4 py-12">
-    <div class="max-w-4xl mx-auto">
-      <div class="flex justify-center mb-6">
-        <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-16 w-auto">
-      </div>
-      <div class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
-        <h2 class="text-2xl md:text-3xl font-bold text-teal-700 mb-2 text-center">Seu Perfil Comportamental</h2>
-        <p class="text-slate-600 text-center mb-8">Aqui estão seus quatro arquétipos, do mais ao menos dominante.</p>
-
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6" x-show="result">
-          <template x-for="a in archetypesOrdered()" :key="a.key">
-            <div class="flex flex-col items-center">
-              <div class="w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center mb-3" :style="`background-color: ${a.bg}`">
-                <img :src="`assets/${a.key}.png`" :alt="a.label" class="w-16 h-16 md:w-20 md:h-20 object-contain" onerror="this.style.display='none'">
-              </div>
-              <div class="font-bold text-slate-700 tracking-wide" x-text="a.label.toUpperCase()"></div>
-              <div class="text-3xl md:text-4xl font-extrabold text-slate-800 mt-1" x-text="`${result[a.key]}%`"></div>
-            </div>
-          </template>
-        </div>
-
-        <div class="text-center mt-8">
-          <button @click="retake()" :disabled="loading" class="text-teal-700 hover:text-teal-900 font-semibold underline disabled:opacity-50">
-            Refazer o teste
+          <button :disabled="loading" class="btn-primary w-full">
+            <span x-show="!loading">Entrar</span>
+            <span x-show="loading">Entrando...</span>
           </button>
-        </div>
-      </div>
-
-      <!-- Chat -->
-      <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
-        <h3 class="text-xl font-bold text-teal-700 mb-1">Análise com o Analista Comportamental</h3>
-        <p class="text-slate-600 text-sm mb-6">Converse com nossa IA especializada para entender seu perfil em profundidade.</p>
-
-        <div x-ref="chatBox" class="space-y-3 h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50">
-          <template x-for="(m, i) in chat" :key="i">
-            <div :class="m.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-              <div :class="m.role === 'user' ? 'bg-teal-700 text-white' : 'bg-white border border-slate-200 text-slate-800'" class="rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(m.content)"></div>
-            </div>
-          </template>
-          <div x-show="streaming" class="flex justify-start">
-            <div class="bg-white border border-slate-200 text-slate-800 rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(streamBuffer) || '<span class=\'text-slate-400\'>digitando...</span>'"></div>
+          <div class="flex flex-col items-center gap-1 pt-2">
+            <button type="button" @click="goView('forgot')" class="text-sm text-teal-700 hover:text-teal-900">Esqueci minha senha</button>
+            <p class="text-sm text-slate-600">
+              Não tem conta?
+              <button type="button" @click="goView('register')" class="text-teal-700 hover:text-teal-900">Criar agora</button>
+            </p>
           </div>
-        </div>
-
-        <form @submit.prevent="sendMessage()" class="mt-4 flex gap-2">
-          <input x-model="input" :disabled="streaming" type="text" placeholder="Digite sua mensagem..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none disabled:bg-slate-100">
-          <button type="submit" :disabled="streaming || !input.trim()" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-5 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Enviar</button>
         </form>
       </div>
+    </section>
+
+    <!-- REGISTER -->
+    <section x-show="view === 'register'" class="flex items-center justify-center px-4 py-12">
+      <div class="w-full max-w-xl card p-6 md:p-8 space-y-4">
+        <div class="flex items-center gap-2">
+          <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+          <span class="font-semibold text-slate-900">Testes Comportamentais</span>
+        </div>
+        <h1 class="text-xl font-semibold">Criar conta</h1>
+        <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
+        <form @submit.prevent="doRegister()" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="label">Nome</label>
+              <input type="text" required x-model="registerForm.nome" class="input">
+            </div>
+            <div>
+              <label class="label">Sobrenome</label>
+              <input type="text" required x-model="registerForm.sobrenome" class="input">
+            </div>
+          </div>
+          <div>
+            <label class="label">WhatsApp (com DDD)</label>
+            <input type="tel" required placeholder="(11) 99999-9999" x-model="registerForm.whatsapp" class="input">
+          </div>
+          <div>
+            <label class="label">E-mail</label>
+            <input type="email" required x-model="registerForm.email" class="input">
+          </div>
+          <div>
+            <label class="label">Profissão</label>
+            <input type="text" x-model="registerForm.profissao" class="input">
+          </div>
+          <div>
+            <label class="label">Onde nos conheceu?</label>
+            <select x-model="registerForm.origem" class="input bg-white">
+              <option value="">Selecione...</option>
+              <option value="Instagram">Instagram</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Google">Google</option>
+              <option value="Indicação">Indicação</option>
+              <option value="YouTube">YouTube</option>
+              <option value="Evento">Evento</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Senha (mínimo 8 caracteres)</label>
+            <input type="password" required minlength="8" x-model="registerForm.password" class="input">
+          </div>
+          <button :disabled="loading" class="btn-primary w-full">
+            <span x-show="!loading">Criar conta</span>
+            <span x-show="loading">Criando...</span>
+          </button>
+          <p class="text-sm text-center">
+            Já tem conta?
+            <button type="button" @click="goView('login')" class="text-teal-700 hover:text-teal-900">Entrar</button>
+          </p>
+        </form>
+      </div>
+    </section>
+
+    <!-- FORGOT PASSWORD -->
+    <section x-show="view === 'forgot'" class="flex items-center justify-center px-4 py-12">
+      <div class="w-full max-w-sm card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+          <span class="font-semibold text-slate-900">Testes Comportamentais</span>
+        </div>
+        <h1 class="text-xl font-semibold">Esqueci minha senha</h1>
+
+        <template x-if="forgotSent">
+          <div class="space-y-3">
+            <p class="text-sm text-slate-700">Se houver uma conta com esse e-mail, você receberá um link para redefinir sua senha em breve.</p>
+            <button @click="goView('login')" class="btn-secondary w-full">Voltar ao login</button>
+          </div>
+        </template>
+
+        <template x-if="!forgotSent">
+          <form @submit.prevent="doForgot()" class="space-y-4">
+            <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
+            <p class="text-sm text-slate-600">Informe seu e-mail e enviaremos um link para redefinir sua senha.</p>
+            <div>
+              <label class="label">E-mail</label>
+              <input type="email" required x-model="authForm.email" class="input" placeholder="seu@email.com">
+            </div>
+            <button :disabled="loading" class="btn-primary w-full">
+              <span x-show="!loading">Enviar link</span>
+              <span x-show="loading">Enviando...</span>
+            </button>
+            <p class="text-sm text-center">
+              <button type="button" @click="goView('login')" class="text-teal-700 hover:text-teal-900">Voltar ao login</button>
+            </p>
+          </form>
+        </template>
+      </div>
+    </section>
+
+    <!-- RESET PASSWORD -->
+    <section x-show="view === 'reset'" class="flex items-center justify-center px-4 py-12">
+      <div class="w-full max-w-sm card p-6 space-y-4">
+        <div class="flex items-center gap-2">
+          <img src="assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+          <span class="font-semibold text-slate-900">Testes Comportamentais</span>
+        </div>
+        <h1 class="text-xl font-semibold">Redefinir senha</h1>
+
+        <template x-if="!resetToken">
+          <div class="space-y-3">
+            <p class="text-sm text-red-600">Link inválido. Solicite um novo.</p>
+            <button @click="goView('forgot')" class="btn-secondary w-full">Solicitar novo link</button>
+          </div>
+        </template>
+
+        <template x-if="resetToken && resetDone">
+          <div class="space-y-3">
+            <p class="text-sm text-green-700 font-medium">Senha redefinida com sucesso!</p>
+            <button @click="goView('login')" class="btn-primary w-full">Fazer login</button>
+          </div>
+        </template>
+
+        <template x-if="resetToken && !resetDone">
+          <form @submit.prevent="doReset()" class="space-y-4">
+            <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
+            <div>
+              <label class="label">Nova senha</label>
+              <input type="password" required minlength="8" x-model="resetForm.newPassword" class="input" placeholder="Mínimo 8 caracteres">
+            </div>
+            <div>
+              <label class="label">Confirmar nova senha</label>
+              <input type="password" required minlength="8" x-model="resetForm.confirmPassword" class="input" placeholder="Repita a senha">
+            </div>
+            <button :disabled="loading" class="btn-primary w-full">
+              <span x-show="!loading">Redefinir senha</span>
+              <span x-show="loading">Salvando...</span>
+            </button>
+          </form>
+        </template>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section x-show="view === 'dashboard'" class="px-4 py-10">
+      <div class="mx-auto max-w-5xl">
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Seus testes</h1>
+        <p class="text-slate-600 mb-8">Escolha um teste para iniciar ou ver seus resultados.</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <template x-for="t in tests" :key="t.id">
+            <button
+              type="button"
+              @click="t.ativo ? openTest(t.id) : null"
+              :disabled="!t.ativo"
+              :class="t.ativo
+                ? 'card p-5 text-left hover:border-teal-600 hover:shadow-md transition cursor-pointer'
+                : 'card p-5 text-left opacity-60 grayscale cursor-not-allowed'">
+              <div class="flex items-start justify-between mb-3">
+                <div :class="t.ativo ? 'h-10 w-10 rounded-lg bg-teal-700 text-white flex items-center justify-center' : 'h-10 w-10 rounded-lg bg-slate-200 text-slate-500 flex items-center justify-center'">
+                  <template x-if="t.ativo">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2l2.4 6.8L21 9.3l-5.3 4.5L17.5 21 12 17.3 6.5 21l1.8-7.2L3 9.3l6.6-.5L12 2z"/></svg>
+                  </template>
+                  <template x-if="!t.ativo">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M17 8V7a5 5 0 00-10 0v1H5v14h14V8h-2zm-8-1a3 3 0 016 0v1H9V7zm3 9.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+                  </template>
+                </div>
+              </div>
+              <h3 class="font-semibold text-slate-900" x-text="t.nome"></h3>
+              <p class="text-sm text-slate-600 mt-1" x-text="t.descricao || '\u00a0'"></p>
+            </button>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEST DETAIL (histórico + botão novo) -->
+    <section x-show="view === 'test-detail'" class="px-4 py-10">
+      <div class="mx-auto max-w-4xl">
+        <button @click="goDashboard()" class="text-sm text-teal-700 hover:text-teal-900 mb-2">&larr; Voltar</button>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h1 class="text-2xl md:text-3xl font-bold text-slate-900" x-text="selectedTest ? selectedTest.nome : ''"></h1>
+            <p class="text-slate-600" x-text="selectedTest ? selectedTest.descricao : ''"></p>
+          </div>
+          <button @click="startNewTest()" :disabled="loading" class="btn-primary px-5 py-2.5">
+            <span x-show="!loading">Fazer novo teste</span>
+            <span x-show="loading">Iniciando...</span>
+          </button>
+        </div>
+        <p x-show="error" x-text="error" class="text-sm text-red-600 mb-4"></p>
+
+        <h2 class="text-lg font-semibold text-slate-900 mb-3">Seus resultados anteriores</h2>
+
+        <template x-if="history.length === 0">
+          <div class="card p-8 text-center text-slate-500">Você ainda não concluiu nenhum teste.</div>
+        </template>
+
+        <div class="space-y-3">
+          <template x-for="h in history" :key="h.token">
+            <button @click="openResult(h.token)" class="card w-full p-5 text-left hover:border-teal-600 hover:shadow-md transition">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <div class="font-medium text-slate-900" x-text="formatDate(h.concluido_em)"></div>
+                  <div class="text-sm text-slate-600 mt-1">
+                    Tubarão <span class="font-semibold text-slate-800" x-text="h.perc.tubarao + '%'"></span>
+                    · Lobo <span class="font-semibold text-slate-800" x-text="h.perc.lobo + '%'"></span>
+                    · Águia <span class="font-semibold text-slate-800" x-text="h.perc.aguia + '%'"></span>
+                    · Gato <span class="font-semibold text-slate-800" x-text="h.perc.gato + '%'"></span>
+                  </div>
+                </div>
+                <span class="text-teal-700 font-medium">Ver &rarr;</span>
+              </div>
+            </button>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <!-- WIZARD -->
+    <section x-show="view === 'wizard'" class="min-h-[70vh] flex items-center justify-center px-4 py-10">
+      <div class="max-w-2xl w-full bg-white rounded-2xl shadow-lg p-6 md:p-10">
+        <div class="mb-6">
+          <div class="flex justify-between text-sm text-slate-500 mb-2">
+            <span x-text="`Pergunta ${currentIdx + 1} de ${questions.length}`"></span>
+            <span x-text="`${Math.round(((currentIdx + 1) / questions.length) * 100)}%`"></span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2">
+            <div class="bg-teal-600 h-2 rounded-full transition-all" :style="`width: ${((currentIdx + 1) / questions.length) * 100}%`"></div>
+          </div>
+        </div>
+
+        <template x-if="questions.length > 0">
+          <div>
+            <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
+            <div class="space-y-3">
+              <template x-for="opt in currentOptions" :key="opt.value + opt.label">
+                <button
+                  @click="chooseOption(opt.value)"
+                  :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
+                  class="w-full text-left border-2 rounded-xl px-4 py-4 transition">
+                  <span x-text="opt.label" class="text-slate-800"></span>
+                </button>
+              </template>
+            </div>
+            <div class="flex justify-between items-center mt-8">
+              <button @click="prevQuestion()" :disabled="currentIdx === 0" class="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-30">← Voltar</button>
+              <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+              <template x-if="currentIdx < questions.length - 1">
+                <button @click="nextQuestion()" :disabled="!answers[currentQid]" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Avançar →</button>
+              </template>
+              <template x-if="currentIdx === questions.length - 1">
+                <button @click="submitTest()" :disabled="!answers[currentQid] || loading" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+                  <span x-show="!loading">Ver meu resultado</span>
+                  <span x-show="loading">Calculando...</span>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- RESULT + CHAT -->
+    <section x-show="view === 'result'" class="px-4 py-10">
+      <div class="max-w-4xl mx-auto">
+        <button @click="goBackToTest()" class="text-sm text-teal-700 hover:text-teal-900 mb-4">&larr; Voltar ao teste</button>
+
+        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
+          <h2 class="text-2xl md:text-3xl font-bold text-teal-700 mb-2 text-center">Seu Perfil Comportamental</h2>
+          <p class="text-slate-600 text-center mb-8">Aqui estão seus quatro arquétipos, do mais ao menos dominante.</p>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6" x-show="result">
+            <template x-for="a in archetypesOrdered()" :key="a.key">
+              <div class="flex flex-col items-center">
+                <div class="w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center mb-3" :style="`background-color: ${a.bg}`">
+                  <img :src="`assets/${a.key}.png`" :alt="a.label" class="w-16 h-16 md:w-20 md:h-20 object-contain" onerror="this.style.display='none'">
+                </div>
+                <div class="font-bold text-slate-700 tracking-wide" x-text="a.label.toUpperCase()"></div>
+                <div class="text-3xl md:text-4xl font-extrabold text-slate-800 mt-1" x-text="`${result[a.key]}%`"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+          <h3 class="text-xl font-bold text-teal-700 mb-1">Análise com o Analista Comportamental</h3>
+          <p class="text-slate-600 text-sm mb-6">Converse com nossa IA especializada para entender seu perfil em profundidade.</p>
+
+          <div x-ref="chatBox" class="space-y-3 h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50">
+            <template x-for="(m, i) in chat" :key="i">
+              <div :class="m.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                <div :class="m.role === 'user' ? 'bg-teal-700 text-white' : 'bg-white border border-slate-200 text-slate-800'" class="rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(m.content)"></div>
+              </div>
+            </template>
+            <div x-show="streaming" class="flex justify-start">
+              <div class="bg-white border border-slate-200 text-slate-800 rounded-2xl px-4 py-3 max-w-[85%] whitespace-pre-wrap" x-html="renderMd(streamBuffer) || '<span class=\'text-slate-400\'>digitando...</span>'"></div>
+            </div>
+          </div>
+
+          <form @submit.prevent="sendMessage()" class="mt-4 flex gap-2">
+            <input x-model="input" :disabled="streaming" type="text" placeholder="Digite sua mensagem..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 focus:border-teal-600 focus:ring-1 focus:ring-teal-600 outline-none disabled:bg-slate-100">
+            <button type="submit" :disabled="streaming || !input.trim()" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-5 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Enviar</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="mt-8">
+    <hr class="border-slate-200">
+    <div class="mx-auto max-w-6xl px-4 py-4 text-center text-xs text-slate-500">
+      www.strategicai.com.br &nbsp;&copy;&nbsp; Todos os direitos reservados
     </div>
-  </section>
+  </footer>
 
   <script src="static/app.js"></script>
 </body>

@@ -304,6 +304,17 @@ QUESTIONS = [
 QUESTION_IDS = [q["id"] for q in QUESTIONS]
 VALID_ARCHETYPES = {"aguia", "gato", "lobo", "tubarao"}
 
+TESTS = [
+    {"id": 1, "nome": "Perfil Comportamental", "descricao": "Descubra seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato.", "ativo": True},
+    {"id": 2, "nome": "Teste dois", "descricao": "", "ativo": False},
+    {"id": 3, "nome": "Teste três", "descricao": "", "ativo": False},
+    {"id": 4, "nome": "Teste quatro", "descricao": "", "ativo": False},
+]
+
+
+def get_test(test_id: int) -> dict | None:
+    return next((t for t in TESTS if t["id"] == test_id), None)
+
 
 def public_questions():
     return [

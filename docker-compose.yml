@@ -21,6 +21,10 @@ services:
       - UAZAPI_TOKEN=${UAZAPI_TOKEN}
       - UAZAPI_INSTANCE=${UAZAPI_INSTANCE}
       - ALERT_PHONE=${ALERT_PHONE}
+      - ADMIN_USER=${ADMIN_USER}
+      - ADMIN_PASS=${ADMIN_PASS}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-24}
     volumes:
       - perfil_data:/data
     deploy:

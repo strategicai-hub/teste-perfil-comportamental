@@ -1,0 +1,34 @@
+{% extends "_base.html" %}
+{% block title %}Resultado — Admin{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl px-4 py-8">
+  <a href="/admin/users/{{ lead.user_id }}" class="text-sm text-teal-700 hover:text-teal-900">&larr; Voltar ao usuário</a>
+  <h1 class="text-2xl font-bold text-slate-900 mt-2 mb-1">{{ lead.test_nome }}</h1>
+  <p class="text-sm text-slate-600 mb-6">{{ lead.user_nome }} · {{ lead.user_email }}</p>
+
+  {% if lead.perc %}
+  <div class="rounded-xl border border-slate-200 bg-white p-6 mb-6">
+    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide mb-4">Percentuais</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+      <div><div class="text-xs text-slate-500">Tubarão</div><div class="text-2xl font-bold text-teal-700">{{ lead.perc.tubarao }}%</div></div>
+      <div><div class="text-xs text-slate-500">Lobo</div><div class="text-2xl font-bold text-rose-700">{{ lead.perc.lobo }}%</div></div>
+      <div><div class="text-xs text-slate-500">Águia</div><div class="text-2xl font-bold text-orange-600">{{ lead.perc.aguia }}%</div></div>
+      <div><div class="text-xs text-slate-500">Gato</div><div class="text-2xl font-bold text-green-600">{{ lead.perc.gato }}%</div></div>
+    </div>
+    <p class="text-xs text-slate-500 mt-4">Concluído em {{ lead.concluido_em.strftime('%d/%m/%Y %H:%M') if lead.concluido_em else "—" }}</p>
+  </div>
+  {% endif %}
+
+  <h2 class="text-lg font-semibold text-slate-900 mb-3">Histórico de chat</h2>
+  <div class="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+    {% for m in messages %}
+      <div class="{{ 'text-right' if m.role == 'user' else 'text-left' }}">
+        <div class="inline-block max-w-[85%] px-4 py-3 rounded-2xl whitespace-pre-wrap {{ 'bg-teal-700 text-white' if m.role == 'user' else 'bg-slate-100 text-slate-800' }}">{{ m.content }}</div>
+        <div class="text-[11px] text-slate-400 mt-1">{{ m.role }} · {{ m.created_at.strftime('%d/%m %H:%M') if m.created_at else "" }}</div>
+      </div>
+    {% else %}
+      <p class="text-sm text-slate-500 text-center">Nenhuma mensagem trocada.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

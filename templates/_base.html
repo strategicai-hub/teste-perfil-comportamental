@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Strategic AI — Testes Comportamentais{% endblock %}</title>
+  <link rel="icon" type="image/png" href="/assets/favicon-sai.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .btn-primary { @apply bg-teal-700 hover:bg-teal-800 text-white; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+  {% if show_header|default(true) %}
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <a href="/admin" class="flex items-center gap-3 font-semibold text-slate-900">
+        <img src="/assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+        <span>Testes Comportamentais</span>
+      </a>
+      <div class="flex items-center gap-4 text-sm">
+        <span class="text-slate-600">Administrador</span>
+        <form method="POST" action="/admin/logout">
+          <button type="submit" class="rounded-md bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-800">Sair</button>
+        </form>
+      </div>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="flex-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="mt-12">
+    <hr class="border-slate-200">
+    <div class="mx-auto max-w-6xl px-4 py-4 text-center text-xs text-slate-500">
+      www.strategicai.com.br &nbsp;&copy;&nbsp; Todos os direitos reservados
+    </div>
+  </footer>
+</body>
+</html>

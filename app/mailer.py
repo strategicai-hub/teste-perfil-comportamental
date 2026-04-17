@@ -91,3 +91,54 @@ def send_result_email(to: str, nome: str, perc: dict[str, int], token: str) -> N
             smtp.send_message(msg)
     except Exception as exc:
         log.error("Falha ao enviar e-mail: %s", exc)
+
+
+def _reset_html(nome: str, link: str) -> str:
+    return f"""\
+<!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="utf-8"><title>Redefinir senha</title></head>
+<body style="font-family: Arial, Helvetica, sans-serif; background:#f5f7fa; margin:0; padding:24px;">
+  <div style="max-width:520px; margin:0 auto; background:#ffffff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <h1 style="color:#0f766e; margin:0 0 12px 0; font-size:22px;">Olá, {nome}.</h1>
+    <p style="color:#334155; line-height:1.6;">Recebemos uma solicitação para redefinir a senha da sua conta nos Testes Comportamentais da Strategic AI.</p>
+    <p style="text-align:center; margin:28px 0;">
+      <a href="{link}" style="display:inline-block; background:#0f766e; color:#fff; padding:12px 28px; text-decoration:none; border-radius:8px; font-weight:700;">
+        Redefinir minha senha
+      </a>
+    </p>
+    <p style="color:#64748b; font-size:13px; line-height:1.6;">
+      O link expira em <strong>1 hora</strong>. Se você não solicitou a redefinição, basta ignorar este e-mail.
+    </p>
+    <p style="color:#94a3b8; font-size:12px; margin-top:24px;">Strategic AI — Testes Comportamentais</p>
+  </div>
+</body>
+</html>"""
+
+
+def send_password_reset(to: str, nome: str, reset_link: str) -> None:
+    if not settings.smtp_host or not settings.smtp_user:
+        log.warning("SMTP não configurado — pulando envio de reset")
+        return
+
+    msg = EmailMessage()
+    msg["Subject"] = "Redefinir senha — Strategic AI"
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = to
+    msg.set_content(
+        f"Olá {nome},\n\n"
+        f"Acesse o link abaixo para redefinir sua senha (expira em 1 hora):\n\n"
+        f"{reset_link}\n\n"
+        f"Se não foi você, ignore este e-mail.\n\n"
+        f"Strategic AI"
+    )
+    msg.add_alternative(_reset_html(nome, reset_link), subtype="html")
+
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+            smtp.starttls()
+            smtp.login(settings.smtp_user, settings.smtp_pass)
+            smtp.send_message(msg)
+    except Exception as exc:
+        log.error("Falha ao enviar e-mail de reset: %s", exc)
+        raise

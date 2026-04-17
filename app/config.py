@@ -1,3 +1,5 @@
+import secrets
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,5 +25,13 @@ class Settings(BaseSettings):
     uazapi_instance: str = ""
     alert_phone: str = ""
 
+    admin_user: str = ""
+    admin_pass: str = ""
+    jwt_secret: str = ""
+    jwt_expire_hours: int = 24
+
 
 settings = Settings()
+
+if not settings.jwt_secret:
+    settings.jwt_secret = secrets.token_hex(32)

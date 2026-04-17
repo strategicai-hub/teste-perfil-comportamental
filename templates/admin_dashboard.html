@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+{% block title %}Admin — Usuários{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-6xl px-4 py-8">
+  <h1 class="text-2xl font-bold text-slate-900 mb-1">Usuários</h1>
+  <p class="text-sm text-slate-600 mb-6">Total: {{ users|length }}</p>
+
+  <div class="rounded-xl border border-slate-200 bg-white overflow-x-auto">
+    <table class="w-full text-sm min-w-[720px]">
+      <thead class="bg-slate-100 text-slate-700">
+        <tr>
+          <th class="text-left px-4 py-3 font-medium">Nome</th>
+          <th class="text-left px-4 py-3 font-medium">E-mail</th>
+          <th class="text-left px-4 py-3 font-medium">WhatsApp</th>
+          <th class="text-left px-4 py-3 font-medium">Profissão</th>
+          <th class="text-left px-4 py-3 font-medium">Origem</th>
+          <th class="text-center px-4 py-3 font-medium">Testes</th>
+          <th class="text-left px-4 py-3 font-medium">Criado em</th>
+          <th class="text-right px-4 py-3 font-medium">Ações</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200">
+        {% for u in users %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-3">{{ u.nome }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ u.email }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ u.whatsapp }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ u.profissao or "—" }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ u.origem or "—" }}</td>
+          <td class="px-4 py-3 text-center">{{ u.testes }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ u.created_at.strftime('%d/%m/%Y %H:%M') if u.created_at else "—" }}</td>
+          <td class="px-4 py-3 text-right">
+            <a href="/admin/users/{{ u.id }}" class="text-teal-700 hover:text-teal-900 font-medium">Ver</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">Nenhum usuário cadastrado ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
