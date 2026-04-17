@@ -226,8 +226,8 @@
     </section>
 
     <!-- DASHBOARD -->
-    <section x-show="view === 'dashboard'" class="px-4 py-10">
-      <div class="mx-auto max-w-5xl">
+    <section x-show="view === 'dashboard'" class="py-10">
+      <div class="mx-auto max-w-5xl px-4">
         <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Seus testes</h1>
         <p class="text-slate-600 mb-8">Escolha um teste para iniciar ou ver seus resultados.</p>
 
@@ -239,7 +239,7 @@
               :disabled="!t.ativo"
               :class="t.ativo
                 ? 'card p-5 text-left hover:border-teal-600 hover:shadow-md transition cursor-pointer'
-                : 'card p-5 text-left opacity-60 grayscale cursor-not-allowed'">
+                : 'card p-5 text-left opacity-90 cursor-not-allowed'">
               <div class="flex items-start justify-between mb-3">
                 <div :class="t.ativo ? 'h-10 w-10 rounded-lg bg-teal-700 text-white flex items-center justify-center' : 'h-10 w-10 rounded-lg bg-slate-200 text-slate-500 flex items-center justify-center'">
                   <template x-if="t.icon === 'star'">
@@ -286,8 +286,8 @@
     </section>
 
     <!-- TEST DETAIL (histórico + botão novo) -->
-    <section x-show="view === 'test-detail'" class="px-4 py-10">
-      <div class="mx-auto max-w-4xl">
+    <section x-show="view === 'test-detail'" class="py-10">
+      <div class="mx-auto max-w-4xl px-4">
         <button @click="goDashboard()" class="text-sm text-teal-700 hover:text-teal-900 mb-2">&larr; Voltar</button>
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
@@ -373,8 +373,8 @@
     </section>
 
     <!-- RESULT + CHAT -->
-    <section x-show="view === 'result'" class="px-4 py-10">
-      <div class="max-w-4xl mx-auto">
+    <section x-show="view === 'result'" class="py-10">
+      <div class="max-w-4xl mx-auto px-4">
         <button @click="goBackToTest()" class="text-sm text-teal-700 hover:text-teal-900 mb-4">&larr; Voltar ao teste</button>
 
         <div class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
@@ -420,7 +420,6 @@
   </main>
 
   <footer class="mt-8">
-    <hr class="border-slate-200">
     <div class="mx-auto max-w-6xl px-4 py-4 text-center text-xs text-slate-500">
       www.strategicai.com.br &nbsp;&copy;&nbsp; Todos os direitos reservados
     </div>
