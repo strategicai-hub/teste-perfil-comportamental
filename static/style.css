@@ -1,5 +1,13 @@
 html { scroll-behavior: smooth; }
 
+body {
+  background-image: url('../assets/fundo-tela.png');
+  background-repeat: no-repeat;
+  background-position: right bottom;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
 .overflow-y-auto::-webkit-scrollbar { width: 6px; }
 .overflow-y-auto::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 .overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
