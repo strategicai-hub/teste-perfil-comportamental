@@ -12,7 +12,7 @@
     {% if error %}
       <p class="text-sm text-red-600">{{ error }}</p>
     {% endif %}
-    <form method="POST" action="/admin/login" class="space-y-4">
+    <form method="POST" action="{{ base_path }}/admin/login" class="space-y-4">
       <div>
         <label class="mb-1 block text-sm font-medium text-slate-700" for="username">Usuário</label>
         <input id="username" name="username" required autofocus

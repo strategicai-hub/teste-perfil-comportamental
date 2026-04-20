@@ -8,6 +8,7 @@ services:
       - network_public
     environment:
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - BASE_PATH=${BASE_PATH:-/perfil-comportamental}
       - DATABASE_URL=sqlite:////data/app.db
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}

@@ -28,6 +28,7 @@ INDEX_FILE = STATIC_DIR / "index.html"
 FAVICON_FILE = ASSETS_DIR / "favicon-sai.png"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.globals["base_path"] = settings.base_path
 
 app = FastAPI(title="Strategic AI — Testes Comportamentais")
 
@@ -464,7 +465,7 @@ def _lead_to_dict(lead: Lead) -> dict:
 @app.get("/admin/login")
 def admin_login_page(request: Request):
     if auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
-        return RedirectResponse(url="/admin", status_code=302)
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
 
 
@@ -476,7 +477,7 @@ def admin_login(request: Request, username: str = Form(...), password: str = For
         and username == settings.admin_user
         and password == settings.admin_pass
     ):
-        response = RedirectResponse(url="/admin", status_code=302)
+        response = RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
         response.set_cookie(
             key=auth.ADMIN_COOKIE,
             value=auth.make_admin_cookie(),
@@ -496,14 +497,14 @@ def admin_login(request: Request, username: str = Form(...), password: str = For
 
 @app.post("/admin/logout")
 def admin_logout():
-    response = RedirectResponse(url="/admin/login", status_code=302)
+    response = RedirectResponse(url=f"{settings.base_path}/admin/login", status_code=302)
     response.delete_cookie(key=auth.ADMIN_COOKIE, path="/")
     return response
 
 
 def _admin_guard(request: Request):
     if not auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
-        return RedirectResponse(url="/admin/login", status_code=302)
+        return RedirectResponse(url=f"{settings.base_path}/admin/login", status_code=302)
     return None
 
 

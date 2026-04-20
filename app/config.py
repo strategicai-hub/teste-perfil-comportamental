@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     public_base_url: str = "http://localhost:8000/perfil-comportamental"
+    base_path: str = ""
     database_url: str = "sqlite:///./data/app.db"
 
     gemini_api_key: str = ""
