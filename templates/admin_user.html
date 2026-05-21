@@ -38,7 +38,19 @@
           <td class="px-4 py-3 text-slate-600">{{ r.concluido_em.strftime('%d/%m/%Y %H:%M') if r.concluido_em else "Em andamento" }}</td>
           <td class="px-4 py-3 text-slate-700">
             {% if r.perc %}
-              T {{ r.perc.tubarao }}% · L {{ r.perc.lobo }}% · A {{ r.perc.aguia }}% · G {{ r.perc.gato }}%
+              <div class="flex items-center gap-3 flex-wrap">
+                {% for a in [
+                  {'key': 'tubarao', 'label': 'Tubarão'},
+                  {'key': 'lobo',    'label': 'Lobo'},
+                  {'key': 'aguia',   'label': 'Águia'},
+                  {'key': 'gato',    'label': 'Gato'},
+                ] %}
+                <span class="inline-flex items-center gap-1.5" title="{{ a.label }}">
+                  <img src="/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-7 h-7 object-contain">
+                  <span class="font-semibold text-slate-800">{{ r.perc[a.key] }}%</span>
+                </span>
+                {% endfor %}
+              </div>
             {% else %}—{% endif %}
           </td>
           <td class="px-4 py-3 text-right">

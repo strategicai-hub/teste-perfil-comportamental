@@ -8,14 +8,22 @@
 
   {% if lead.perc %}
   <div class="rounded-xl border border-slate-200 bg-white p-6 mb-6">
-    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide mb-4">Percentuais</h2>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-      <div><div class="text-xs text-slate-500">Tubarão</div><div class="text-2xl font-bold text-teal-700">{{ lead.perc.tubarao }}%</div></div>
-      <div><div class="text-xs text-slate-500">Lobo</div><div class="text-2xl font-bold text-rose-700">{{ lead.perc.lobo }}%</div></div>
-      <div><div class="text-xs text-slate-500">Águia</div><div class="text-2xl font-bold text-orange-600">{{ lead.perc.aguia }}%</div></div>
-      <div><div class="text-xs text-slate-500">Gato</div><div class="text-2xl font-bold text-green-600">{{ lead.perc.gato }}%</div></div>
+    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide mb-6">Percentuais</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+      {% for a in [
+        {'key': 'tubarao', 'label': 'TUBARÃO'},
+        {'key': 'lobo',    'label': 'LOBO'},
+        {'key': 'aguia',   'label': 'ÁGUIA'},
+        {'key': 'gato',    'label': 'GATO'},
+      ] %}
+      <div class="flex flex-col items-center">
+        <img src="/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-24 h-24 md:w-28 md:h-28 object-contain mb-3">
+        <div class="text-sm font-semibold tracking-wide text-slate-700">{{ a.label }}</div>
+        <div class="text-2xl font-bold text-slate-800 mt-1">{{ lead.perc[a.key] }}%</div>
+      </div>
+      {% endfor %}
     </div>
-    <p class="text-xs text-slate-500 mt-4">Concluído em {{ lead.concluido_em.strftime('%d/%m/%Y %H:%M') if lead.concluido_em else "—" }}</p>
+    <p class="text-xs text-slate-500 mt-6">Concluído em {{ lead.concluido_em.strftime('%d/%m/%Y %H:%M') if lead.concluido_em else "—" }}</p>
   </div>
   {% endif %}
 
