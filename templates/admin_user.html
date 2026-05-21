@@ -46,7 +46,7 @@
                   {'key': 'gato',    'label': 'Gato'},
                 ] %}
                 <span class="inline-flex items-center gap-1.5" title="{{ a.label }}">
-                  <img src="/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-7 h-7 object-contain">
+                  <img src="{{ base_path }}/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-7 h-7 object-contain">
                   <span class="font-semibold text-slate-800">{{ r.perc[a.key] }}%</span>
                 </span>
                 {% endfor %}

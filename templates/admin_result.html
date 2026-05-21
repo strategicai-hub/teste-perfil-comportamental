@@ -17,7 +17,7 @@
         {'key': 'gato',    'label': 'GATO'},
       ] %}
       <div class="flex flex-col items-center">
-        <img src="/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-24 h-24 md:w-28 md:h-28 object-contain mb-3">
+        <img src="{{ base_path }}/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-24 h-24 md:w-28 md:h-28 object-contain mb-3">
         <div class="text-sm font-semibold tracking-wide text-slate-700">{{ a.label }}</div>
         <div class="text-2xl font-bold text-slate-800 mt-1">{{ lead.perc[a.key] }}%</div>
       </div>

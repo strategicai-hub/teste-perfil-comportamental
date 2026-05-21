@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Strategic AI — Testes Comportamentais{% endblock %}</title>
-  <link rel="icon" type="image/png" href="/assets/favicon-sai.png">
+  <link rel="icon" type="image/png" href="{{ base_path }}/assets/favicon-sai.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
   <style>
     body {
       font-family: 'Inter', system-ui, sans-serif;
-      background-image: url('/assets/fundo-tela.png');
+      background-image: url('{{ base_path }}/assets/fundo-tela.png');
       background-repeat: no-repeat;
       background-position: right bottom;
       background-size: cover;
@@ -26,7 +26,7 @@
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
       <a href="{{ base_path }}/admin" class="flex items-center gap-3 font-semibold text-slate-900">
-        <img src="/assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
+        <img src="{{ base_path }}/assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
         <span>Testes Comportamentais</span>
       </a>
       <div class="flex items-center gap-4 text-sm">
