@@ -58,7 +58,7 @@ def initial_message(perc: dict[str, int]) -> str:
 def stream_chat(messages: list[dict], perc: dict[str, int]) -> Iterator[str]:
     _ensure_configured()
     model = genai.GenerativeModel(
-        "gemini-2.5-pro",
+        "gemini-pro-latest",
         system_instruction=_system_prompt(perc),
     )
     history = _to_gemini_history(messages[:-1])
