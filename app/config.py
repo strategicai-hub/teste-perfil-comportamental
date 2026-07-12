@@ -28,11 +28,20 @@ class Settings(BaseSettings):
 
     admin_user: str = ""
     admin_pass: str = ""
+    # Super admin — mesmas credenciais do SAI Comercial (definir no .env).
+    # Se vazios, cai no admin_user/admin_pass legado.
+    super_admin_email: str = ""
+    super_admin_password: str = ""
     jwt_secret: str = ""
     jwt_expire_hours: int = 24
+    # Secure flag dos cookies. Se None, deriva de public_base_url (https → True).
+    cookie_secure: bool | None = None
 
 
 settings = Settings()
 
 if not settings.jwt_secret:
     settings.jwt_secret = secrets.token_hex(32)
+
+if settings.cookie_secure is None:
+    settings.cookie_secure = settings.public_base_url.lower().startswith("https")

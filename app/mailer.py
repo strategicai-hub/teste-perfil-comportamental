@@ -62,27 +62,72 @@ def _result_html(nome: str, perc: dict[str, int], link: str) -> str:
 </html>"""
 
 
-def send_result_email(to: str, nome: str, perc: dict[str, int], token: str) -> None:
+_NIVEL_TXT = {"verde": "risco baixo", "amarelo": "risco intermediário", "vermelho": "risco alto"}
+
+
+def _copsoq_html(nome: str, result: dict, link: str) -> str:
+    top = result.get("top_riscos") or []
+    linhas = "".join(
+        f'<tr><td style="padding:8px 0;color:#334155;">{t["nome"]}</td>'
+        f'<td style="padding:8px 0;text-align:right;color:#64748b;">{_NIVEL_TXT.get(t.get("nivel"), "-")}</td></tr>'
+        for t in top
+    )
+    return f"""\
+<!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="utf-8"><title>Seu resultado COPSOQ II</title></head>
+<body style="font-family: Arial, Helvetica, sans-serif; background:#f5f7fa; margin:0; padding:24px;">
+  <div style="max-width:560px; margin:0 auto; background:#ffffff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <h1 style="color:#0f766e; margin:0 0 8px 0;">Olá, {nome}!</h1>
+    <p style="color:#334155; line-height:1.5;">Você concluiu o questionário de riscos psicossociais (COPSOQ II). Estes são os seus principais focos de atenção:</p>
+    <table style="width:100%; border-collapse:collapse; margin:16px 0;">{linhas}</table>
+    <p style="text-align:center; margin:32px 0;">
+      <a href="{link}" style="display:inline-block; background:#0f766e; color:#fff; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:700;">
+        Ver meu resultado completo e conversar com o analista
+      </a>
+    </p>
+    <p style="color:#94a3b8; font-size:12px; margin-top:24px;">Strategic AI — Riscos Psicossociais</p>
+  </div>
+</body>
+</html>"""
+
+
+def send_result_email(to: str, nome: str, result: dict, token: str) -> None:
     if not settings.smtp_host or not settings.smtp_user:
         log.warning("SMTP não configurado — pulando envio de e-mail")
         return
 
     link = f"{settings.public_base_url}/r/{token}"
     msg = EmailMessage()
-    msg["Subject"] = f"{nome}, aqui está seu Perfil Comportamental"
     msg["From"] = settings.smtp_from or settings.smtp_user
     msg["To"] = to
-    msg.set_content(
-        f"Olá {nome},\n\n"
-        f"Seu resultado:\n"
-        f"- Tubarão: {perc.get('tubarao', 0)}%\n"
-        f"- Lobo: {perc.get('lobo', 0)}%\n"
-        f"- Águia: {perc.get('aguia', 0)}%\n"
-        f"- Gato: {perc.get('gato', 0)}%\n\n"
-        f"Acesse seu resultado e continue a análise: {link}\n\n"
-        f"Strategic AI"
-    )
-    msg.add_alternative(_result_html(nome, perc, link), subtype="html")
+
+    if result and result.get("type") == "copsoq":
+        top = result.get("top_riscos") or []
+        msg["Subject"] = f"{nome}, aqui está seu resultado do COPSOQ II"
+        linhas_txt = "\n".join(f"- {t['nome']} ({_NIVEL_TXT.get(t.get('nivel'), '-')})" for t in top)
+        msg.set_content(
+            f"Olá {nome},\n\n"
+            f"Você concluiu o questionário de riscos psicossociais (COPSOQ II).\n"
+            f"Principais focos de atenção:\n{linhas_txt}\n\n"
+            f"Acesse seu resultado completo e continue a análise: {link}\n\n"
+            f"Strategic AI"
+        )
+        msg.add_alternative(_copsoq_html(nome, result, link), subtype="html")
+    else:
+        perc = (result or {}).get("perc", {})
+        msg["Subject"] = f"{nome}, aqui está seu Perfil Comportamental"
+        msg.set_content(
+            f"Olá {nome},\n\n"
+            f"Seu resultado:\n"
+            f"- Tubarão: {perc.get('tubarao', 0)}%\n"
+            f"- Lobo: {perc.get('lobo', 0)}%\n"
+            f"- Águia: {perc.get('aguia', 0)}%\n"
+            f"- Gato: {perc.get('gato', 0)}%\n\n"
+            f"Acesse seu resultado e continue a análise: {link}\n\n"
+            f"Strategic AI"
+        )
+        msg.add_alternative(_result_html(nome, perc, link), subtype="html")
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:

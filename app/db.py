@@ -34,6 +34,28 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Company(Base):
+    __tablename__ = "companies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    manager_email: Mapped[str] = mapped_column(String(200), default="", index=True)
+    manager_password_hash: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    areas: Mapped[list["CompanyArea"]] = relationship(cascade="all, delete-orphan")
+
+
+class CompanyArea(Base):
+    __tablename__ = "company_areas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Lead(Base):
     __tablename__ = "leads"
 
@@ -52,6 +74,11 @@ class Lead(Base):
     perc_lobo: Mapped[int | None] = mapped_column(Integer, nullable=True)
     perc_aguia: Mapped[int | None] = mapped_column(Integer, nullable=True)
     perc_gato: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Resultado genérico de qualquer teste (JSON serializado). COPSOQ usa só isto.
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Contexto organizacional (testes de empresa, ex.: COPSOQ).
+    company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), nullable=True, index=True)
+    area: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     answers: Mapped[list["Answer"]] = relationship(cascade="all, delete-orphan")
     messages: Mapped[list["ChatMessage"]] = relationship(cascade="all, delete-orphan")
@@ -96,6 +123,12 @@ def _migrate_leads_columns():
             conn.execute(text("ALTER TABLE leads ADD COLUMN user_id VARCHAR(64)"))
         if "test_id" not in cols:
             conn.execute(text("ALTER TABLE leads ADD COLUMN test_id INTEGER DEFAULT 1"))
+        if "result_json" not in cols:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN result_json TEXT"))
+        if "company_id" not in cols:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN company_id VARCHAR(64)"))
+        if "area" not in cols:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN area VARCHAR(160)"))
 
 
 def get_session():

@@ -228,6 +228,9 @@
     <!-- DASHBOARD -->
     <section x-show="view === 'dashboard'" class="py-10">
       <div class="mx-auto max-w-5xl px-4">
+        <div x-show="company" class="mb-6 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+          Você está respondendo para a empresa <strong x-text="company ? company.nome : ''"></strong>.
+        </div>
         <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Seus testes</h1>
         <p class="text-slate-600 mb-8">Escolha um teste para iniciar ou ver seus resultados.</p>
 
@@ -244,6 +247,9 @@
                 <div :class="t.ativo ? 'h-10 w-10 rounded-lg bg-teal-700 text-white flex items-center justify-center' : 'h-10 w-10 rounded-lg bg-slate-200 text-slate-500 flex items-center justify-center'">
                   <template x-if="t.icon === 'star'">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2l2.4 6.8L21 9.3l-5.3 4.5L17.5 21 12 17.3 6.5 21l1.8-7.2L3 9.3l6.6-.5L12 2z"/></svg>
+                  </template>
+                  <template x-if="t.icon === 'shield'">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2l8 3v6c0 5-3.4 8.7-8 11-4.6-2.3-8-6-8-11V5l8-3zm-1 13l6-6-1.4-1.4L11 12.2 8.4 9.6 7 11l4 4z"/></svg>
                   </template>
                   <template x-if="t.icon === 'crown'">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M3 19h18v2H3v-2zm0-12l4 3 5-6 5 6 4-3v10H3V7z"/></svg>
@@ -289,17 +295,32 @@
     <section x-show="view === 'test-detail'" class="py-10">
       <div class="mx-auto max-w-4xl px-4">
         <button @click="goDashboard()" class="text-sm text-teal-700 hover:text-teal-900 mb-2">&larr; Voltar</button>
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 class="text-2xl md:text-3xl font-bold text-slate-900" x-text="selectedTest ? selectedTest.nome : ''"></h1>
-            <p class="text-slate-600" x-text="selectedTest ? selectedTest.descricao : ''"></p>
-          </div>
-          <button @click="startNewTest()" :disabled="loading" class="btn-primary px-5 py-2.5">
-            <span x-show="!loading">Fazer novo teste</span>
-            <span x-show="loading">Iniciando...</span>
-          </button>
+        <div class="mb-6">
+          <h1 class="text-2xl md:text-3xl font-bold text-slate-900" x-text="selectedTest ? selectedTest.nome : ''"></h1>
+          <p class="text-slate-600" x-text="selectedTest ? selectedTest.descricao : ''"></p>
         </div>
-        <p x-show="error" x-text="error" class="text-sm text-red-600 mb-4"></p>
+
+        <div class="card p-5 mb-8">
+          <template x-if="needsArea">
+            <div class="mb-4">
+              <label class="label">Sua área / setor na empresa <span class="text-slate-400" x-text="company ? '(' + company.nome + ')' : ''"></span></label>
+              <select x-model="selectedArea" class="input bg-white">
+                <option value="">Selecione a sua área...</option>
+                <template x-for="a in (company ? company.areas : [])" :key="a">
+                  <option :value="a" x-text="a"></option>
+                </template>
+              </select>
+              <p x-show="company && company.areas.length === 0" class="text-xs text-amber-600 mt-1">Nenhuma área cadastrada para esta empresa. Fale com o responsável.</p>
+            </div>
+          </template>
+          <div class="flex items-center gap-4">
+            <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
+            <button @click="startNewTest()" :disabled="loading" class="btn-primary px-5 py-2.5 ml-auto">
+              <span x-show="!loading">Fazer novo teste</span>
+              <span x-show="loading">Iniciando...</span>
+            </button>
+          </div>
+        </div>
 
         <h2 class="text-lg font-semibold text-slate-900 mb-3">Seus resultados anteriores</h2>
 
@@ -314,10 +335,25 @@
                 <div>
                   <div class="font-medium text-slate-900" x-text="formatDate(h.concluido_em)"></div>
                   <div class="text-sm text-slate-600 mt-1">
-                    Tubarão <span class="font-semibold text-slate-800" x-text="h.perc.tubarao + '%'"></span>
-                    · Lobo <span class="font-semibold text-slate-800" x-text="h.perc.lobo + '%'"></span>
-                    · Águia <span class="font-semibold text-slate-800" x-text="h.perc.aguia + '%'"></span>
-                    · Gato <span class="font-semibold text-slate-800" x-text="h.perc.gato + '%'"></span>
+                    <template x-if="h.resumo && h.resumo.tipo === 'copsoq'">
+                      <span>
+                        <span x-show="h.area" class="text-slate-500" x-text="h.area ? (h.area + ' · ') : ''"></span>
+                        <template x-if="h.resumo.top_risco">
+                          <span>Principal foco: <span class="font-semibold text-slate-800" x-text="h.resumo.top_risco"></span></span>
+                        </template>
+                        <template x-if="!h.resumo.top_risco">
+                          <span>Sem focos de risco relevantes</span>
+                        </template>
+                      </span>
+                    </template>
+                    <template x-if="h.resumo && h.resumo.tipo === 'archetype'">
+                      <span>
+                        Tubarão <span class="font-semibold text-slate-800" x-text="(h.resumo.perc.tubarao||0) + '%'"></span>
+                        · Lobo <span class="font-semibold text-slate-800" x-text="(h.resumo.perc.lobo||0) + '%'"></span>
+                        · Águia <span class="font-semibold text-slate-800" x-text="(h.resumo.perc.aguia||0) + '%'"></span>
+                        · Gato <span class="font-semibold text-slate-800" x-text="(h.resumo.perc.gato||0) + '%'"></span>
+                      </span>
+                    </template>
                   </div>
                 </div>
                 <span class="text-teal-700 font-medium">Ver &rarr;</span>
@@ -343,13 +379,14 @@
 
         <template x-if="questions.length > 0">
           <div>
+            <p x-show="currentSecao" x-text="currentSecao" class="text-sm font-medium text-teal-700 mb-2"></p>
             <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
             <div class="space-y-3">
               <template x-for="opt in currentOptions" :key="opt.value + opt.label">
                 <button
                   @click="chooseOption(opt.value)"
                   :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
-                  class="w-full text-left border-2 rounded-xl px-4 py-4 transition">
+                  class="w-full text-left border-2 rounded-xl px-4 py-3.5 transition">
                   <span x-text="opt.label" class="text-slate-800"></span>
                 </button>
               </template>
@@ -377,24 +414,59 @@
       <div class="max-w-4xl mx-auto px-4">
         <button @click="goBackToTest()" class="text-sm text-teal-700 hover:text-teal-900 mb-4">&larr; Voltar ao teste</button>
 
-        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
+        <!-- Resultado: Perfil Comportamental (arquétipos) -->
+        <div x-show="result && !isCopsoq" class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
           <h2 class="text-2xl md:text-3xl font-bold text-teal-700 mb-2 text-center">Seu Perfil Comportamental</h2>
           <p class="text-slate-600 text-center mb-8">Aqui estão seus quatro arquétipos, do mais ao menos dominante.</p>
 
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6" x-show="result">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             <template x-for="a in archetypesOrdered()" :key="a.key">
               <div class="flex flex-col items-center">
                 <img :src="`assets/${a.key}.png`" :alt="a.label" class="w-28 h-28 md:w-32 md:h-32 object-contain mb-3">
                 <div class="font-bold text-slate-700 tracking-wide" x-text="a.label.toUpperCase()"></div>
-                <div class="text-3xl md:text-4xl font-extrabold text-slate-800 mt-1" x-text="`${result[a.key]}%`"></div>
+                <div class="text-3xl md:text-4xl font-extrabold text-slate-800 mt-1" x-text="`${a.value}%`"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Resultado: COPSOQ II (dimensional) -->
+        <div x-show="isCopsoq" class="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6">
+          <h2 class="text-2xl md:text-3xl font-bold text-teal-700 mb-1 text-center">Seu perfil de riscos psicossociais</h2>
+          <p class="text-slate-600 text-center mb-6">COPSOQ II — pontuação de 0 a 100 por dimensão. As cores indicam o nível de risco.</p>
+          <div class="flex flex-wrap justify-center gap-4 mb-8 text-xs text-slate-600">
+            <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#16a34a"></span> Favorável</span>
+            <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#f59e0b"></span> Atenção</span>
+            <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#dc2626"></span> Risco alto</span>
+          </div>
+          <div class="space-y-7">
+            <template x-for="d in copsoqGrouped()" :key="d.key">
+              <div>
+                <div class="flex items-center justify-between mb-3 pb-1 border-b border-slate-100">
+                  <h3 class="font-bold text-slate-800" x-text="d.nome"></h3>
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full" :style="`background:${nivelBg(d.nivel)};color:${nivelColor(d.nivel)}`" x-text="nivelLabel(d.nivel)"></span>
+                </div>
+                <div class="space-y-2.5">
+                  <template x-for="s in d.subs" :key="s.key">
+                    <div>
+                      <div class="flex justify-between text-sm mb-1">
+                        <span class="text-slate-700" x-text="s.nome"></span>
+                        <span class="font-semibold text-slate-800" x-text="s.score"></span>
+                      </div>
+                      <div class="w-full bg-slate-100 rounded-full h-2.5">
+                        <div class="h-2.5 rounded-full transition-all" :style="`width:${s.score}%;background:${nivelColor(s.nivel)}`"></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
               </div>
             </template>
           </div>
         </div>
 
         <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
-          <h3 class="text-xl font-bold text-teal-700 mb-1">Análise com o Analista Comportamental</h3>
-          <p class="text-slate-600 text-sm mb-6">Converse com nossa IA especializada para entender seu perfil em profundidade.</p>
+          <h3 class="text-xl font-bold text-teal-700 mb-1" x-text="isCopsoq ? 'Análise com o Analista de Riscos Psicossociais' : 'Análise com o Analista Comportamental'"></h3>
+          <p class="text-slate-600 text-sm mb-6">Converse com nossa IA especializada para entender seu resultado em profundidade.</p>
 
           <div x-ref="chatBox" class="space-y-3 h-96 overflow-y-auto border border-slate-200 rounded-xl p-4 bg-slate-50">
             <template x-for="(m, i) in chat" :key="i">

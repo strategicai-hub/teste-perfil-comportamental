@@ -18,8 +18,15 @@ function app() {
     selectedTest: null,
     history: [],
 
+    // Contexto de empresa (testes organizacionais, ex.: COPSOQ)
+    companySlug: null,
+    company: null,          // { nome, slug, areas: [] }
+    selectedArea: '',
+    pendingResult: null,    // token vindo de ?r= (link de e-mail/WhatsApp)
+
     token: null,
     questions: [],
+    testKind: 'choice',
     currentIdx: 0,
     answers: {},
     result: null,
@@ -29,17 +36,14 @@ function app() {
     streaming: false,
     streamBuffer: '',
 
-    get currentQid() {
-      const q = this.questions[this.currentIdx];
-      return q ? q.id : null;
-    },
-    get currentOptions() {
-      const q = this.questions[this.currentIdx];
-      return q ? q.options : [];
-    },
-    get currentPrompt() {
-      const q = this.questions[this.currentIdx];
-      return q ? q.prompt : '';
+    get currentQ() { return this.questions[this.currentIdx] || null; },
+    get currentQid() { return this.currentQ ? this.currentQ.id : null; },
+    get currentOptions() { return this.currentQ ? this.currentQ.options : []; },
+    get currentPrompt() { return this.currentQ ? this.currentQ.prompt : ''; },
+    get currentSecao() { return this.currentQ ? (this.currentQ.secao || '') : ''; },
+
+    get needsArea() {
+      return !!(this.selectedTest && this.selectedTest.empresa && this.company);
     },
 
     showHeader() {
@@ -49,12 +53,33 @@ function app() {
     async init() {
       const path = window.location.pathname;
       const search = new URLSearchParams(window.location.search);
+      // contexto de empresa via ?empresa=slug (persiste em localStorage)
+      const emp = search.get('empresa');
+      if (emp) {
+        this.companySlug = emp;
+        try { localStorage.setItem('tpc_empresa', emp); } catch (_) {}
+      } else {
+        try { this.companySlug = localStorage.getItem('tpc_empresa'); } catch (_) {}
+      }
+      if (this.companySlug) this.loadCompany();
+
       if (/\/reset\/?$/.test(path) && search.get('token')) {
         this.resetToken = search.get('token');
         this.view = 'reset';
         return;
       }
+      // Link de resultado (?r=token) — abre o resultado após autenticar.
+      const rt = search.get('r');
+      if (rt) this.pendingResult = rt;
       await this.checkSession();
+    },
+
+    async loadCompany() {
+      try {
+        const r = await fetch(`api/company/${encodeURIComponent(this.companySlug)}`);
+        if (r.ok) this.company = await r.json();
+        else { this.company = null; }
+      } catch (_) { this.company = null; }
     },
 
     async checkSession() {
@@ -198,6 +223,11 @@ function app() {
       this.error = '';
       this.view = 'dashboard';
       await this.loadTests();
+      if (this.pendingResult) {
+        const t = this.pendingResult;
+        this.pendingResult = null;
+        await this.openResult(t);
+      }
     },
 
     async loadTests() {
@@ -217,6 +247,10 @@ function app() {
         const data = await r.json();
         this.selectedTest = data.test;
         this.history = data.history;
+        this.selectedArea = '';
+        if (this.selectedTest && this.selectedTest.empresa && this.companySlug && !this.company) {
+          await this.loadCompany();
+        }
         this.view = 'test-detail';
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
@@ -226,12 +260,20 @@ function app() {
 
     async startNewTest() {
       if (!this.selectedTest || !this.selectedTest.ativo) return;
+      if (this.needsArea && !this.selectedArea) { this.error = 'Selecione a sua área/setor para continuar'; return; }
       this.error = '';
       this.loading = true;
       try {
+        const body = {};
+        if (this.selectedTest.empresa && this.company) {
+          body.company_slug = this.company.slug;
+          body.area = this.selectedArea;
+        }
         const r = await fetch(`api/tests/${this.selectedTest.id}/start`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
+          body: JSON.stringify(body),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -243,7 +285,8 @@ function app() {
         this.result = null;
         this.chat = [];
         this.currentIdx = 0;
-        await this.loadQuestions();
+        this.questions = [];
+        await this.loadQuestions(this.selectedTest.id);
         this.view = 'wizard';
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (e) {
@@ -263,6 +306,7 @@ function app() {
         this.token = token;
         this.answers = data.answers || {};
         this.result = data.result;
+        this.testKind = (data.lead && data.lead.test_kind) || 'choice';
         this.chat = data.chat_history || [];
         if (!this.result) throw new Error('Teste não concluído');
         this.view = 'result';
@@ -275,24 +319,29 @@ function app() {
       }
     },
 
-    async loadQuestions() {
-      if (this.questions.length > 0) return;
-      const r = await fetch('api/questions', { credentials: 'same-origin' });
+    async loadQuestions(testId) {
+      const r = await fetch(`api/tests/${testId}/questions`, { credentials: 'same-origin' });
       const data = await r.json();
-      this.questions = data.questions;
+      this.questions = data.questions || [];
+      this.testKind = data.kind || 'choice';
     },
 
     async chooseOption(value) {
-      this.answers[this.currentQid] = value;
+      const qid = this.currentQid;
+      this.answers[qid] = value;
       this.error = '';
       try {
         await fetch(`api/lead/${this.token}/answers`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ answers: { [this.currentQid]: value } }),
+          body: JSON.stringify({ answers: { [qid]: value } }),
         });
       } catch (e) { /* best-effort */ }
+      // Likert (COPSOQ): avança automaticamente para agilizar as 119 questões.
+      if (this.testKind === 'likert' && this.currentIdx < this.questions.length - 1) {
+        setTimeout(() => this.nextQuestion(), 140);
+      }
     },
 
     nextQuestion() {
@@ -315,13 +364,21 @@ function app() {
       this.error = '';
       this.loading = true;
       try {
-        const r = await fetch(`api/lead/${this.token}/submit`, { method: 'POST', credentials: 'same-origin' });
+        // Reenvia todas as respostas no submit — evita perder a última resposta por
+        // um PATCH assíncrono que não chegou/falhou.
+        const r = await fetch(`api/lead/${this.token}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ answers: this.answers }),
+        });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           throw new Error(err.detail || 'Erro ao calcular resultado');
         }
         const data = await r.json();
-        this.result = data.percentuais;
+        this.result = data.result;
+        this.testKind = (this.result && this.result.type === 'copsoq') ? 'likert' : 'choice';
         this.view = 'result';
         window.scrollTo({ top: 0, behavior: 'smooth' });
         await this.initChat();
@@ -415,16 +472,40 @@ function app() {
       else this.goDashboard();
     },
 
+    // --- Resultado: arquétipos ---
     archetypesOrdered() {
+      const perc = (this.result && this.result.perc) ? this.result.perc : {};
       const meta = {
-        tubarao: { label: 'Tubarão', bg: '#0f766e' },
-        lobo: { label: 'Lobo', bg: '#be123c' },
-        aguia: { label: 'Águia', bg: '#ea580c' },
-        gato: { label: 'Gato', bg: '#16a34a' },
+        tubarao: { label: 'Tubarão' },
+        lobo: { label: 'Lobo' },
+        aguia: { label: 'Águia' },
+        gato: { label: 'Gato' },
       };
       return Object.keys(meta)
-        .map(k => ({ key: k, ...meta[k], value: this.result ? this.result[k] : 0 }))
+        .map(k => ({ key: k, ...meta[k], value: perc[k] || 0 }))
         .sort((a, b) => b.value - a.value);
+    },
+
+    // --- Resultado: COPSOQ dimensional ---
+    get isCopsoq() { return !!(this.result && this.result.type === 'copsoq'); },
+
+    copsoqGrouped() {
+      if (!this.isCopsoq) return [];
+      const subs = this.result.subscales || [];
+      return (this.result.domains || []).map(d => ({
+        ...d,
+        subs: subs.filter(s => s.dominio === d.key && s.score !== null && s.score !== undefined),
+      })).filter(d => d.subs.length > 0);
+    },
+
+    nivelColor(nivel) {
+      return { verde: '#16a34a', amarelo: '#f59e0b', vermelho: '#dc2626' }[nivel] || '#94a3b8';
+    },
+    nivelBg(nivel) {
+      return { verde: '#dcfce7', amarelo: '#fef3c7', vermelho: '#fee2e2' }[nivel] || '#f1f5f9';
+    },
+    nivelLabel(nivel) {
+      return { verde: 'Favorável', amarelo: 'Atenção', vermelho: 'Risco alto' }[nivel] || '—';
     },
 
     formatDate(iso) {

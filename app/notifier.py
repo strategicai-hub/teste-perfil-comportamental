@@ -7,23 +7,39 @@ from .config import settings
 log = logging.getLogger(__name__)
 
 
-def notify_new_lead(lead: dict, perc: dict[str, int], token: str) -> None:
+def notify_new_lead(lead: dict, result: dict, token: str) -> None:
     if not settings.uazapi_base_url or not settings.uazapi_token or not settings.alert_phone:
         log.warning("UAZAPI não configurado — pulando notificação")
         return
 
     link = f"{settings.public_base_url}/r/{token}"
     nome_completo = f"{lead.get('nome','')} {lead.get('sobrenome','')}".strip()
+
+    if result and result.get("type") == "copsoq":
+        top = result.get("top_riscos") or []
+        riscos = "\n".join(f"• {t['nome']} ({t.get('nivel')})" for t in top[:5]) or "sem dados"
+        contexto = ""
+        if lead.get("area"):
+            contexto = f"Área: {lead.get('area')}\n"
+        resultado_txt = f"*Principais riscos:*\n{riscos}"
+        titulo = "*Nova resposta — COPSOQ II (Riscos Psicossociais)*"
+    else:
+        perc = (result or {}).get("perc", {})
+        contexto = ""
+        resultado_txt = (
+            f"Resultado:\n"
+            f"Tubarão {perc.get('tubarao',0)}% | Lobo {perc.get('lobo',0)}% | "
+            f"Águia {perc.get('aguia',0)}% | Gato {perc.get('gato',0)}%"
+        )
+        titulo = "*Novo lead no Teste de Perfil*"
+
     text = (
-        f"*Novo lead no Teste de Perfil*\n\n"
+        f"{titulo}\n\n"
         f"Nome: {nome_completo}\n"
         f"E-mail: {lead.get('email','')}\n"
         f"WhatsApp: {lead.get('whatsapp','')}\n"
-        f"Profissão: {lead.get('profissao','')}\n"
-        f"Origem: {lead.get('origem','')}\n\n"
-        f"Resultado:\n"
-        f"Tubarão {perc.get('tubarao',0)}% | Lobo {perc.get('lobo',0)}% | "
-        f"Águia {perc.get('aguia',0)}% | Gato {perc.get('gato',0)}%\n\n"
+        f"{contexto}\n"
+        f"{resultado_txt}\n\n"
         f"Ver análise: {link}"
     )
 

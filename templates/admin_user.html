@@ -37,7 +37,7 @@
           <td class="px-4 py-3 text-slate-600">{{ r.created_at.strftime('%d/%m/%Y %H:%M') if r.created_at else "—" }}</td>
           <td class="px-4 py-3 text-slate-600">{{ r.concluido_em.strftime('%d/%m/%Y %H:%M') if r.concluido_em else "Em andamento" }}</td>
           <td class="px-4 py-3 text-slate-700">
-            {% if r.perc %}
+            {% if r.resumo and r.resumo.tipo == 'archetype' %}
               <div class="flex items-center gap-3 flex-wrap">
                 {% for a in [
                   {'key': 'tubarao', 'label': 'Tubarão'},
@@ -47,9 +47,16 @@
                 ] %}
                 <span class="inline-flex items-center gap-1.5" title="{{ a.label }}">
                   <img src="{{ base_path }}/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-7 h-7 object-contain">
-                  <span class="font-semibold text-slate-800">{{ r.perc[a.key] }}%</span>
+                  <span class="font-semibold text-slate-800">{{ r.resumo.perc[a.key] }}%</span>
                 </span>
                 {% endfor %}
+              </div>
+            {% elif r.resumo and r.resumo.tipo == 'copsoq' %}
+              <div class="text-slate-700">
+                {% if r.area %}<span class="text-slate-500">{{ r.area }} · </span>{% endif %}
+                {% if r.resumo.top_risco %}Foco: <span class="font-medium">{{ r.resumo.top_risco }}</span>
+                <span class="text-xs text-red-600">({{ r.resumo.vermelhos }} em risco alto)</span>
+                {% else %}Sem focos de risco relevantes{% endif %}
               </div>
             {% else %}—{% endif %}
           </td>

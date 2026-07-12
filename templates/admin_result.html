@@ -4,9 +4,16 @@
 <div class="mx-auto max-w-4xl px-4 py-8">
   <a href="{{ base_path }}/admin/users/{{ lead.user_id }}" class="text-sm text-teal-700 hover:text-teal-900">&larr; Voltar ao usuário</a>
   <h1 class="text-2xl font-bold text-slate-900 mt-2 mb-1">{{ lead.test_nome }}</h1>
-  <p class="text-sm text-slate-600 mb-6">{{ lead.user_nome }} · {{ lead.user_email }}</p>
+  <p class="text-sm text-slate-600 mb-6">
+    {{ lead.user_nome }} · {{ lead.user_email }}
+    {% if lead.company_nome %} · Empresa: {{ lead.company_nome }}{% endif %}
+    {% if lead.area %} · Área: {{ lead.area }}{% endif %}
+  </p>
 
-  {% if lead.perc %}
+  {% set nivel_cor = {'verde': '#16a34a', 'amarelo': '#f59e0b', 'vermelho': '#dc2626'} %}
+  {% set nivel_txt = {'verde': 'Favorável', 'amarelo': 'Atenção', 'vermelho': 'Risco alto'} %}
+
+  {% if lead.result and lead.result.type == 'archetype' %}
   <div class="rounded-xl border border-slate-200 bg-white p-6 mb-6">
     <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide mb-6">Percentuais</h2>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
@@ -19,11 +26,34 @@
       <div class="flex flex-col items-center">
         <img src="{{ base_path }}/assets/{{ a.key }}.png" alt="{{ a.label }}" class="w-24 h-24 md:w-28 md:h-28 object-contain mb-3">
         <div class="text-sm font-semibold tracking-wide text-slate-700">{{ a.label }}</div>
-        <div class="text-2xl font-bold text-slate-800 mt-1">{{ lead.perc[a.key] }}%</div>
+        <div class="text-2xl font-bold text-slate-800 mt-1">{{ lead.result.perc[a.key] }}%</div>
       </div>
       {% endfor %}
     </div>
     <p class="text-xs text-slate-500 mt-6">Concluído em {{ lead.concluido_em.strftime('%d/%m/%Y %H:%M') if lead.concluido_em else "—" }}</p>
+  </div>
+  {% elif lead.result and lead.result.type == 'copsoq' %}
+  <div class="rounded-xl border border-slate-200 bg-white p-6 mb-6">
+    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide mb-6">Perfil de riscos psicossociais</h2>
+    {% for d in lead.result.domains %}
+      {% set subs = lead.result.subscales | selectattr('dominio', 'equalto', d.key) | selectattr('score', 'ne', None) | list %}
+      {% if subs %}
+      <div class="mb-5">
+        <div class="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
+          <h3 class="font-semibold text-slate-800">{{ d.nome }}</h3>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style="color: {{ nivel_cor.get(d.nivel, '#64748b') }}; background: {{ nivel_cor.get(d.nivel, '#64748b') }}22;">{{ nivel_txt.get(d.nivel, '—') }}</span>
+        </div>
+        {% for s in subs %}
+        <div class="mb-2">
+          <div class="flex justify-between text-sm mb-1"><span class="text-slate-700">{{ s.nome }}</span><span class="font-semibold">{{ s.score }}</span></div>
+          <div class="w-full bg-slate-100 rounded-full h-2"><div class="h-2 rounded-full" style="width: {{ s.score }}%; background: {{ nivel_cor.get(s.nivel, '#94a3b8') }};"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    <p class="text-xs text-slate-500 mt-4">Concluído em {{ lead.concluido_em.strftime('%d/%m/%Y %H:%M') if lead.concluido_em else "—" }}</p>
   </div>
   {% endif %}
 

@@ -85,7 +85,7 @@ def append_lead(lead: dict[str, Any]) -> None:
         log.error("Falha ao inserir lead no Sheets: %s", exc)
 
 
-def update_result(token: str, percentuais: dict[str, int]) -> None:
+def update_result(token: str, result: dict) -> None:
     ws = _get_worksheet()
     if ws is None:
         return
@@ -94,18 +94,19 @@ def update_result(token: str, percentuais: dict[str, int]) -> None:
         if cell is None:
             return
         row = cell.row
-        ws.update(
-            f"I{row}:M{row}",
-            [
-                [
-                    percentuais.get("tubarao", 0),
-                    percentuais.get("lobo", 0),
-                    percentuais.get("aguia", 0),
-                    percentuais.get("gato", 0),
-                    datetime.utcnow().isoformat(),
-                ]
-            ],
-            value_input_option="USER_ENTERED",
-        )
+        if result and result.get("type") == "copsoq":
+            top = result.get("top_riscos") or []
+            resumo = "; ".join(f"{t['nome']} ({t.get('nivel')})" for t in top[:5])
+            valores = [resumo, "", "", "", datetime.utcnow().isoformat()]
+        else:
+            perc = (result or {}).get("perc", {})
+            valores = [
+                perc.get("tubarao", 0),
+                perc.get("lobo", 0),
+                perc.get("aguia", 0),
+                perc.get("gato", 0),
+                datetime.utcnow().isoformat(),
+            ]
+        ws.update(f"I{row}:M{row}", [valores], value_input_option="USER_ENTERED")
     except Exception as exc:
         log.error("Falha ao atualizar resultado no Sheets: %s", exc)

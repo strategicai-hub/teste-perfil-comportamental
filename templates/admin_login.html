@@ -8,14 +8,14 @@
       <img src="{{ base_path }}/assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
       <span class="font-semibold">Testes Comportamentais</span>
     </div>
-    <h1 class="text-xl font-semibold">Acesso do administrador</h1>
+    <h1 class="text-xl font-semibold">Acesso do super admin</h1>
     {% if error %}
       <p class="text-sm text-red-600">{{ error }}</p>
     {% endif %}
     <form method="POST" action="{{ base_path }}/admin/login" class="space-y-4">
       <div>
-        <label class="mb-1 block text-sm font-medium text-slate-700" for="username">Usuário</label>
-        <input id="username" name="username" required autofocus
+        <label class="mb-1 block text-sm font-medium text-slate-700" for="username">E-mail</label>
+        <input id="username" name="username" type="email" required autofocus
                class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600">
       </div>
       <div>
