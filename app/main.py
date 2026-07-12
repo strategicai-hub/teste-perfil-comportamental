@@ -143,7 +143,9 @@ def legacy_prefix_redirect(request: Request, rest: str = ""):
     # O app agora vive na raiz do domínio — redireciona preservando path e query.
     # lstrip evita open redirect: sem ele, "/perfil-comportamental//evil.com" viraria
     # Location "//evil.com" (URL protocol-relative → navegador vai para https://evil.com).
-    target = f"{settings.base_path}/{rest.lstrip('/\\')}"
+    # (fora da f-string: Python 3.11 não aceita backslash em expressão de f-string)
+    safe_rest = rest.lstrip("/\\")
+    target = f"{settings.base_path}/{safe_rest}"
     if request.url.query:
         target += f"?{request.url.query}"
     # 308 preserva o método (POST de forms antigos continua POST) e é permanente.
