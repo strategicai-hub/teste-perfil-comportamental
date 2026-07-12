@@ -678,6 +678,40 @@ def empresa_dashboard(request: Request, area: str | None = None):
     )
 
 
+def _manager_company_id(request: Request) -> str | None:
+    token = request.cookies.get(auth.MANAGER_COOKIE)
+    return auth.decode_manager_jwt(token) if token else None
+
+
+# O gestor de cada empresa gerencia as próprias áreas (não o super admin).
+@app.post("/empresa/areas")
+def empresa_add_area(request: Request, nome: str = Form(...)):
+    company_id = _manager_company_id(request)
+    if not company_id:
+        return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
+    nome = nome.strip()
+    with get_session() as s:
+        if s.get(Company, company_id) is None:
+            return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
+        if nome and s.query(CompanyArea).filter_by(company_id=company_id, nome=nome).first() is None:
+            s.add(CompanyArea(company_id=company_id, nome=nome))
+            s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+@app.post("/empresa/areas/{area_id}/delete")
+def empresa_delete_area(area_id: int, request: Request):
+    company_id = _manager_company_id(request)
+    if not company_id:
+        return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
+    with get_session() as s:
+        area = s.get(CompanyArea, area_id)
+        if area is not None and area.company_id == company_id:
+            s.delete(area)
+            s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
 # =========================================================================
 # SUPER ADMIN
 # =========================================================================
@@ -890,37 +924,6 @@ def admin_empresa_detail(company_id: str, request: Request):
             "link": link,
         },
     )
-
-
-@app.post("/admin/empresas/{company_id}/areas")
-def admin_add_area(company_id: str, request: Request, nome: str = Form(...)):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
-    nome = nome.strip()
-    with get_session() as s:
-        company = s.get(Company, company_id)
-        if company is None:
-            raise HTTPException(404, "Empresa não encontrada")
-        if nome:
-            exists = s.query(CompanyArea).filter_by(company_id=company_id, nome=nome).first()
-            if exists is None:
-                s.add(CompanyArea(company_id=company_id, nome=nome))
-                s.commit()
-    return RedirectResponse(url=f"{settings.base_path}/admin/empresas/{company_id}", status_code=302)
-
-
-@app.post("/admin/empresas/{company_id}/areas/{area_id}/delete")
-def admin_delete_area(company_id: str, area_id: int, request: Request):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
-    with get_session() as s:
-        area = s.get(CompanyArea, area_id)
-        if area is not None and area.company_id == company_id:
-            s.delete(area)
-            s.commit()
-    return RedirectResponse(url=f"{settings.base_path}/admin/empresas/{company_id}", status_code=302)
 
 
 @app.post("/admin/empresas/{company_id}/senha")
