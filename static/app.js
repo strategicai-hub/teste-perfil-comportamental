@@ -89,6 +89,10 @@ function app() {
         if (r.ok) {
           const data = await r.json();
           this.user = data.user;
+          // Super admin tem painel próprio (server-side); admin e member usam a SPA.
+          if (this.user && this.user.role === 'super_admin') { window.location.href = 'admin'; return; }
+          // Empresa do usuário vem do servidor (tenant), garantindo o seletor de área.
+          if (data.company) this.company = data.company;
           await this.goDashboard();
         } else {
           this.view = 'login';
@@ -124,12 +128,14 @@ function app() {
           throw new Error(err.detail || 'E-mail ou senha inválidos');
         }
         const data = await r.json();
-        if (data.super_admin) {
-          // Super admin: painel server-side em /admin
-          window.location.href = data.redirect || 'admin';
+        // O papel decide o destino: super_admin→/admin, admin→/empresa (server-side);
+        // member fica na SPA.
+        if (data.redirect) {
+          window.location.href = data.redirect;
           return;
         }
         this.user = data.user;
+        if (data.company) this.company = data.company;
         this.authForm = { email: '', password: '' };
         await this.goDashboard();
       } catch (e) {
@@ -147,7 +153,8 @@ function app() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify(this.registerForm),
+          // Auto-cadastro é sempre vinculado à empresa do link (?empresa=slug).
+          body: JSON.stringify({ ...this.registerForm, company_slug: this.companySlug }),
         });
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -158,6 +165,7 @@ function app() {
         }
         const data = await r.json();
         this.user = data.user;
+        if (data.company) this.company = data.company;
         this.registerForm = { nome: '', sobrenome: '', whatsapp: '', email: '', profissao: '', origem: '', password: '' };
         await this.goDashboard();
       } catch (e) {

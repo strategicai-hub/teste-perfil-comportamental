@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import create_engine, String, Integer, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from .config import settings
 
@@ -20,6 +21,10 @@ class User(Base):
     profissao: Mapped[str] = mapped_column(String(200), default="")
     origem: Mapped[str] = mapped_column(String(200), default="")
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Multi-tenant: papel do usuário e empresa (tenant) à qual pertence.
+    # super_admin tem tenant_id NULL (não pertence a nenhum tenant).
+    role: Mapped[str] = mapped_column(String(16), default="member", index=True)
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -109,7 +114,25 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def init_db():
     Base.metadata.create_all(engine)
+    _migrate_users_columns()
     _migrate_leads_columns()
+    seed_super_admin()
+    migrate_company_managers()
+    backfill_member_tenants()
+
+
+def _migrate_users_columns():
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "users" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("users")}
+    with engine.begin() as conn:
+        if "role" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'member'"))
+            conn.execute(text("UPDATE users SET role='member' WHERE role IS NULL"))
+        if "tenant_id" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN tenant_id VARCHAR(64)"))
 
 
 def _migrate_leads_columns():
@@ -129,6 +152,144 @@ def _migrate_leads_columns():
             conn.execute(text("ALTER TABLE leads ADD COLUMN company_id VARCHAR(64)"))
         if "area" not in cols:
             conn.execute(text("ALTER TABLE leads ADD COLUMN area VARCHAR(160)"))
+
+
+def seed_super_admin():
+    """Cria/atualiza o super admin a partir do env (fonte de verdade da senha).
+
+    Idempotente: promove um User existente com o e-mail configurado, ou cria um
+    novo. Sincroniza o hash da senha a cada boot. Roda só se houver e-mail e senha.
+    """
+    import logging
+    import uuid
+
+    from . import auth
+
+    email = (settings.super_admin_email or "").strip().lower()
+    password = settings.super_admin_password or settings.admin_pass or ""
+    if not email or not password:
+        return
+
+    log = logging.getLogger(__name__)
+    with get_session() as s:
+        try:
+            user = s.query(User).filter(User.email == email).first()
+            pw_hash = auth.hash_password(password)
+            if user is None:
+                user = User(
+                    id=uuid.uuid4().hex,
+                    email=email,
+                    password_hash=pw_hash,
+                    nome="Strategic AI",
+                    sobrenome="Admin",
+                    whatsapp="",
+                    role="super_admin",
+                    tenant_id=None,
+                    blocked=False,
+                )
+                s.add(user)
+            else:
+                user.role = "super_admin"
+                user.tenant_id = None
+                user.blocked = False
+                user.password_hash = pw_hash
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            log.warning("seed_super_admin: colisão ao criar/atualizar %s", email)
+
+
+def migrate_company_managers():
+    """Converte cada Company.manager_email em um User role=admin do tenant.
+
+    Idempotente e defensivo contra colisões de e-mail (unique global):
+    - e-mail reservado do super admin → não rebaixa, pula;
+    - User comum sem tenant → promove a admin do tenant (mantém a senha própria);
+    - User já em OUTRO tenant → conflito (1 e-mail = 1 tenant), pula e loga;
+    - não existe → cria admin reaproveitando o bcrypt de manager_password_hash.
+    """
+    import logging
+    import uuid
+
+    log = logging.getLogger(__name__)
+    super_email = (settings.super_admin_email or "").strip().lower()
+    with get_session() as s:
+        companies = s.query(Company).all()
+        for company in companies:
+            email = (company.manager_email or "").strip().lower()
+            if not email:
+                continue
+            try:
+                user = s.query(User).filter(User.email == email).first()
+                if user is None:
+                    user = User(
+                        id=uuid.uuid4().hex,
+                        email=email,
+                        password_hash=company.manager_password_hash or "",
+                        nome=company.nome or "Gestor",
+                        sobrenome="",
+                        whatsapp="",
+                        role="admin",
+                        tenant_id=company.id,
+                        blocked=False,
+                    )
+                    s.add(user)
+                    s.commit()
+                    continue
+                if email == super_email:
+                    log.warning("migrate_company_managers: %s é super admin; empresa %s sem gestor", email, company.slug)
+                    continue
+                if user.role == "super_admin":
+                    log.warning("migrate_company_managers: %s é super_admin; pulando empresa %s", email, company.slug)
+                    continue
+                if user.tenant_id and user.tenant_id != company.id:
+                    log.warning(
+                        "migrate_company_managers: %s já é de outro tenant; empresa %s precisa de outro e-mail",
+                        email, company.slug,
+                    )
+                    continue
+                # User comum sem tenant (ou já deste tenant) → promove a admin.
+                user.role = "admin"
+                user.tenant_id = company.id
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                log.warning("migrate_company_managers: colisão em %s (empresa %s)", email, company.slug)
+
+
+def backfill_member_tenants():
+    """Vincula members sem tenant à empresa dos próprios leads (dado já registrado).
+
+    Colaboradores legados (cadastro antigo) ficaram com tenant_id NULL, mas seus
+    Leads já carregam company_id. Usar essa associação existente evita deixá-los
+    travados (não é adivinhação — é o vínculo que eles mesmos criaram ao responder).
+    Idempotente: só toca em quem está sem tenant.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+    with get_session() as s:
+        members = (
+            s.query(User)
+            .filter(User.role == "member", User.tenant_id.is_(None))
+            .all()
+        )
+        for u in members:
+            lead = (
+                s.query(Lead)
+                .filter(Lead.user_id == u.id, Lead.company_id.isnot(None))
+                .order_by(Lead.created_at.desc())
+                .first()
+            )
+            if lead is None:
+                continue
+            if s.get(Company, lead.company_id) is not None:
+                u.tenant_id = lead.company_id
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            log.warning("backfill_member_tenants: falha ao commitar")
 
 
 def get_session():

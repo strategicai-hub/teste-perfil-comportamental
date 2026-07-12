@@ -48,8 +48,11 @@
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-3 font-medium text-slate-800">{{ c.nome }}</td>
           <td class="px-4 py-3 text-slate-600">{{ c.slug }}</td>
-          <td class="px-4 py-3 text-right">
-            <a href="{{ base_path }}/admin/empresas/{{ c.id }}" class="text-teal-700 hover:text-teal-900 font-medium">Gerenciar</a>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            <form method="POST" action="{{ base_path }}/admin/impersonate/{{ c.id }}" class="inline">
+              <button class="text-teal-700 hover:text-teal-900 font-medium mr-3">Entrar</button>
+            </form>
+            <a href="{{ base_path }}/admin/empresas/{{ c.id }}" class="text-slate-600 hover:text-slate-900 font-medium">Gerenciar</a>
           </td>
         </tr>
         {% else %}
@@ -68,6 +71,7 @@
         <tr>
           <th class="text-left px-4 py-3 font-medium">Nome</th>
           <th class="text-left px-4 py-3 font-medium">E-mail</th>
+          <th class="text-left px-4 py-3 font-medium">Papel / Empresa</th>
           <th class="text-left px-4 py-3 font-medium">WhatsApp</th>
           <th class="text-left px-4 py-3 font-medium">Profissão</th>
           <th class="text-left px-4 py-3 font-medium">Origem</th>
@@ -81,6 +85,11 @@
         <tr class="hover:bg-slate-50">
           <td class="px-4 py-3">{{ u.nome }}</td>
           <td class="px-4 py-3 text-slate-600">{{ u.email }}</td>
+          <td class="px-4 py-3 text-slate-600">
+            {% if u.role == 'super_admin' %}<span class="text-xs font-medium text-purple-700">Super admin</span>
+            {% elif u.role == 'admin' %}<span class="text-xs font-medium text-teal-700">Gestor</span> · {{ u.empresa or '—' }}
+            {% else %}{{ u.empresa or '—' }}{% endif %}
+          </td>
           <td class="px-4 py-3 text-slate-600">{{ u.whatsapp }}</td>
           <td class="px-4 py-3 text-slate-600">{{ u.profissao or "—" }}</td>
           <td class="px-4 py-3 text-slate-600">{{ u.origem or "—" }}</td>
@@ -91,7 +100,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">Nenhum usuário cadastrado ainda.</td></tr>
+        <tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">Nenhum usuário cadastrado ainda.</td></tr>
         {% endfor %}
       </tbody>
     </table>

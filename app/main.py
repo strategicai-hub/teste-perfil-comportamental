@@ -168,6 +168,8 @@ class RegisterIn(BaseModel):
     profissao: str = Field("", max_length=200)
     origem: str = Field("", max_length=200)
     password: str = Field(..., min_length=8, max_length=128)
+    # Auto-cadastro é sempre pelo link da empresa (?empresa=slug). 100% B2B.
+    company_slug: str = Field(..., min_length=1, max_length=120)
 
 
 class LoginIn(BaseModel):
@@ -198,18 +200,36 @@ def _set_auth_cookie(response: Response, token: str) -> None:
 
 def _clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key=auth.JWT_COOKIE, path="/")
+    # Limpa também eventual impersonation (super admin que saiu pela SPA).
+    response.delete_cookie(key=auth.IMPERSONATE_COOKIE, path="/")
 
 
-def _set_admin_cookie(response: Response) -> None:
-    response.set_cookie(
-        key=auth.ADMIN_COOKIE,
-        value=auth.make_admin_cookie(),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=12 * 3600,
-        path="/",
-    )
+def _redirect_for_role(role: str) -> str | None:
+    """Para onde o front leva após o login. member fica na SPA (None)."""
+    if role == auth.SUPER_ADMIN:
+        return f"{settings.base_path}/admin"
+    if role == auth.ADMIN:
+        return f"{settings.base_path}/empresa"
+    return None
+
+
+def _user_company_context(user: User) -> dict | None:
+    """Empresa (tenant) do usuário, com áreas — para a SPA montar o seletor de área.
+
+    Sem isto, um colaborador logado (sem ?empresa= na URL) não teria o contexto da
+    empresa e cairia num beco no COPSOQ.
+    """
+    if not user.tenant_id:
+        return None
+    with get_session() as s:
+        company = s.get(Company, user.tenant_id)
+        if company is None:
+            return None
+        areas = [
+            a.nome
+            for a in s.query(CompanyArea).filter_by(company_id=company.id).order_by(CompanyArea.nome.asc()).all()
+        ]
+        return {"nome": company.nome, "slug": company.slug, "areas": areas}
 
 
 def _user_to_dict(user: User) -> dict:
@@ -221,6 +241,8 @@ def _user_to_dict(user: User) -> dict:
         "whatsapp": user.whatsapp,
         "profissao": user.profissao,
         "origem": user.origem,
+        "role": user.role,
+        "tenant_id": user.tenant_id,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
 
@@ -232,10 +254,15 @@ def register(data: RegisterIn, response: Response):
     # o login sempre cairia no branch de super admin e a conta ficaria inacessível.
     if settings.super_admin_email and email == settings.super_admin_email.lower().strip():
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+    slug = (data.company_slug or "").lower().strip()
     with get_session() as s:
+        # 100% B2B: o cadastro só existe vinculado a uma empresa (link ?empresa=slug).
+        company = s.query(Company).filter(Company.slug == slug).first() if slug else None
+        if company is None:
+            raise HTTPException(status_code=400, detail="Cadastro disponível apenas pelo link da sua empresa")
         existing = s.query(User).filter(User.email == email).first()
         if existing is not None:
-            raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+            raise HTTPException(status_code=400, detail="E-mail já cadastrado. Faça login.")
         user = User(
             id=auth.new_user_id(),
             email=email,
@@ -245,34 +272,39 @@ def register(data: RegisterIn, response: Response):
             whatsapp=data.whatsapp.strip(),
             profissao=data.profissao.strip(),
             origem=data.origem.strip(),
+            role=auth.MEMBER,
+            tenant_id=company.id,
         )
         s.add(user)
         s.commit()
         s.refresh(user)
         user_dict = _user_to_dict(user)
+        areas = [
+            a.nome
+            for a in s.query(CompanyArea).filter_by(company_id=company.id).order_by(CompanyArea.nome.asc()).all()
+        ]
+        company_ctx = {"nome": company.nome, "slug": company.slug, "areas": areas}
 
     token = auth.create_jwt(user_dict["id"])
     _set_auth_cookie(response, token)
-    return {"user": user_dict}
+    return {"user": user_dict, "role": auth.MEMBER, "redirect": None, "company": company_ctx}
 
 
 @app.post("/api/auth/login")
 def login(data: LoginIn, response: Response):
     email = data.email.lower().strip()
-    # Super admin entra pela mesma tela de login da raiz: só o e-mail
-    # SUPER_ADMIN_EMAIL (atendimento@strategicai.com.br) com a senha correta.
-    if auth.valid_super_admin(email, data.password):
-        _set_admin_cookie(response)
-        return {"super_admin": True, "redirect": f"{settings.base_path}/admin"}
     with get_session() as s:
         user = s.query(User).filter(User.email == email).first()
         if user is None or user.blocked or not auth.verify_password(data.password, user.password_hash):
             raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
         user_dict = _user_to_dict(user)
+        role = user.role
 
     token = auth.create_jwt(user_dict["id"])
     _set_auth_cookie(response, token)
-    return {"user": user_dict}
+    # O papel decide o destino: super_admin→/admin, admin→/empresa, member→SPA.
+    company = _user_company_context(user) if role != auth.SUPER_ADMIN else None
+    return {"user": user_dict, "role": role, "redirect": _redirect_for_role(role), "company": company}
 
 
 @app.post("/api/auth/logout")
@@ -283,7 +315,7 @@ def logout(response: Response):
 
 @app.get("/api/auth/me")
 def me(user: User = Depends(auth.get_current_user)):
-    return {"user": _user_to_dict(user)}
+    return {"user": _user_to_dict(user), "company": _user_company_context(user)}
 
 
 @app.post("/api/auth/forgot-password")
@@ -386,7 +418,6 @@ def test_history(test_id: int, user: User = Depends(auth.get_current_user)):
 
 
 class StartIn(BaseModel):
-    company_slug: str | None = None
     area: str | None = None
 
 
@@ -398,15 +429,16 @@ def start_test(test_id: int, data: StartIn, bg: BackgroundTasks, user: User = De
     if not test["ativo"]:
         raise HTTPException(400, "Teste indisponível no momento")
 
-    company_id = None
+    # O tenant vem SEMPRE do próprio usuário (nunca do cliente): isola por empresa
+    # e impede um colaborador de carimbar o Lead em outra empresa. Super admin
+    # (tenant NULL) — inclusive impersonando — não inicia teste de empresa.
+    company_id = user.tenant_id
     area = None
-    if is_empresa_test(test_id) and data.company_slug:
+    if is_empresa_test(test_id):
+        if not company_id:
+            raise HTTPException(400, "Sua conta não está vinculada a uma empresa")
         with get_session() as s:
-            company = s.query(Company).filter(Company.slug == data.company_slug.lower().strip()).first()
-            if company is None:
-                raise HTTPException(404, "Empresa não encontrada")
-            company_id = company.id
-            area_names = {a.nome for a in s.query(CompanyArea).filter_by(company_id=company.id).all()}
+            area_names = {a.nome for a in s.query(CompanyArea).filter_by(company_id=company_id).all()}
         if not data.area or data.area not in area_names:
             raise HTTPException(400, "Selecione uma área válida da empresa")
         area = data.area
@@ -613,12 +645,16 @@ def _sse_escape(text: str) -> str:
 # =========================================================================
 def _copsoq_agg_for(company_id: str, area: str | None) -> dict:
     with get_session() as s:
+        # Só respondentes 'member' entram no agregado — a resposta do gestor (admin)
+        # não distorce as médias nem quebra o anonimato do grupo.
         q = (
             s.query(Lead)
+            .join(User, Lead.user_id == User.id)
             .filter(
                 Lead.company_id == company_id,
                 Lead.test_id == COPSOQ_TEST_ID,
                 Lead.concluido_em.isnot(None),
+                User.role == auth.MEMBER,
             )
         )
         if area:
@@ -638,70 +674,91 @@ def _company_areas_com_contagem(company_id: str) -> list[dict]:
         for a in areas:
             n = (
                 s.query(func.count(Lead.token))
+                .join(User, Lead.user_id == User.id)
                 .filter(Lead.company_id == company_id, Lead.test_id == COPSOQ_TEST_ID,
-                        Lead.concluido_em.isnot(None), Lead.area == a.nome)
+                        Lead.concluido_em.isnot(None), Lead.area == a.nome,
+                        User.role == auth.MEMBER)
                 .scalar()
             )
             rows.append({"id": a.id, "nome": a.nome, "respondentes": n or 0})
     return rows
 
 
-@app.get("/empresa/login")
-def empresa_login_page(request: Request):
-    if request.cookies.get(auth.MANAGER_COOKIE) and auth.decode_manager_jwt(request.cookies.get(auth.MANAGER_COOKIE)):
-        return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
-    return templates.TemplateResponse("empresa_login.html", {"request": request, "error": None})
-
-
-@app.post("/empresa/login")
-def empresa_login(request: Request, email: str = Form(...), password: str = Form(...)):
-    email_norm = email.lower().strip()
+def _company_members(company_id: str) -> list[dict]:
     with get_session() as s:
-        company = s.query(Company).filter(Company.manager_email == email_norm).first()
-        ok = company is not None and company.manager_password_hash and auth.verify_password(password, company.manager_password_hash)
-        company_id = company.id if ok else None
-    if not ok:
-        return templates.TemplateResponse(
-            "empresa_login.html",
-            {"request": request, "error": "E-mail ou senha inválidos"},
-            status_code=401,
+        members = (
+            s.query(User)
+            .filter(User.tenant_id == company_id, User.role == auth.MEMBER)
+            .order_by(User.created_at.desc())
+            .all()
         )
-    response = RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
-    response.set_cookie(
-        key=auth.MANAGER_COOKIE,
-        value=auth.create_manager_jwt(company_id),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.jwt_expire_hours * 3600,
-        path="/",
-    )
-    return response
+        counts = dict(
+            s.query(Lead.user_id, func.count(Lead.token))
+            .filter(Lead.concluido_em.isnot(None), Lead.company_id == company_id)
+            .group_by(Lead.user_id)
+            .all()
+        )
+        return [
+            {
+                "id": u.id,
+                "nome": f"{u.nome} {u.sobrenome}".strip(),
+                "email": u.email,
+                "whatsapp": u.whatsapp,
+                "blocked": u.blocked,
+                "testes": counts.get(u.id, 0),
+            }
+            for u in members
+        ]
+
+
+# Guardas de página (redirecionam para a tela única de login, em vez de 401/403).
+def _page_user(request: Request, *roles: str):
+    """Retorna (user, None) se logado e com papel permitido, senão (None, redirect)."""
+    user = auth.get_current_user_optional(request)
+    if user is None or (roles and user.role not in roles):
+        return None, RedirectResponse(url=f"{settings.base_path}/", status_code=302)
+    return user, None
+
+
+def _manager_tenant(request: Request, user: User):
+    """Tenant efetivo do gestor (o próprio, ou o impersonado se super admin).
+
+    Retorna (tenant_id, company, impersonating_nome|None) ou (None, None, None)
+    quando o super admin não está impersonando (deve ir para /admin).
+    """
+    tenant_id = auth.get_effective_tenant_id(request, user)
+    if not tenant_id:
+        return None, None, None
+    with get_session() as s:
+        company = s.get(Company, tenant_id)
+        if company is None:
+            return None, None, None
+        impersonating = company.nome if user.role == auth.SUPER_ADMIN else None
+        return tenant_id, {"nome": company.nome, "slug": company.slug}, impersonating
 
 
 @app.post("/empresa/logout")
 def empresa_logout():
-    response = RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
-    response.delete_cookie(key=auth.MANAGER_COOKIE, path="/")
+    response = RedirectResponse(url=f"{settings.base_path}/", status_code=302)
+    response.delete_cookie(key=auth.JWT_COOKIE, path="/")
+    response.delete_cookie(key=auth.IMPERSONATE_COOKIE, path="/")
     return response
 
 
 @app.get("/empresa")
 def empresa_dashboard(request: Request, area: str | None = None):
-    token = request.cookies.get(auth.MANAGER_COOKIE)
-    company_id = auth.decode_manager_jwt(token) if token else None
-    if not company_id:
-        return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
-    with get_session() as s:
-        company = s.get(Company, company_id)
-        if company is None:
-            return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
-        company_data = {"nome": company.nome, "slug": company.slug}
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, company_data, impersonating = _manager_tenant(request, user)
+    if not tenant_id:
+        # super admin sem impersonar → escolher uma empresa no painel admin
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
 
-    areas = _company_areas_com_contagem(company_id)
+    areas = _company_areas_com_contagem(tenant_id)
     total = sum(a["respondentes"] for a in areas)
     scope = area if area else None
-    agg = _copsoq_agg_for(company_id, scope)
+    agg = _copsoq_agg_for(tenant_id, scope)
     return templates.TemplateResponse(
         "empresa_dashboard.html",
         {
@@ -711,40 +768,58 @@ def empresa_dashboard(request: Request, area: str | None = None):
             "total_respondentes": total,
             "scope": scope,
             "agg": agg,
+            "colaboradores": _company_members(tenant_id),
+            "impersonating": impersonating,
         },
     )
-
-
-def _manager_company_id(request: Request) -> str | None:
-    token = request.cookies.get(auth.MANAGER_COOKIE)
-    return auth.decode_manager_jwt(token) if token else None
 
 
 # O gestor de cada empresa gerencia as próprias áreas (não o super admin).
 @app.post("/empresa/areas")
 def empresa_add_area(request: Request, nome: str = Form(...)):
-    company_id = _manager_company_id(request)
-    if not company_id:
-        return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     nome = nome.strip()
     with get_session() as s:
-        if s.get(Company, company_id) is None:
-            return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
-        if nome and s.query(CompanyArea).filter_by(company_id=company_id, nome=nome).first() is None:
-            s.add(CompanyArea(company_id=company_id, nome=nome))
+        if nome and s.query(CompanyArea).filter_by(company_id=tenant_id, nome=nome).first() is None:
+            s.add(CompanyArea(company_id=tenant_id, nome=nome))
             s.commit()
     return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
 
 
 @app.post("/empresa/areas/{area_id}/delete")
 def empresa_delete_area(area_id: int, request: Request):
-    company_id = _manager_company_id(request)
-    if not company_id:
-        return RedirectResponse(url=f"{settings.base_path}/empresa/login", status_code=302)
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     with get_session() as s:
         area = s.get(CompanyArea, area_id)
-        if area is not None and area.company_id == company_id:
+        if area is not None and area.company_id == tenant_id:
             s.delete(area)
+            s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+@app.post("/empresa/colaboradores/{user_id}/block")
+def empresa_toggle_block(user_id: str, request: Request):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    with get_session() as s:
+        target = s.get(User, user_id)
+        # Só age sobre colaborador (member) do próprio tenant — nunca outro tenant/papel.
+        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
+            target.blocked = not target.blocked
             s.commit()
     return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
 
@@ -752,34 +827,54 @@ def empresa_delete_area(area_id: int, request: Request):
 # =========================================================================
 # SUPER ADMIN
 # =========================================================================
-# O login do super admin é feito na tela inicial (/) com o e-mail
-# SUPER_ADMIN_EMAIL — ver /api/auth/login. A antiga página /admin/login
-# só redireciona para a raiz.
+# O login do super admin é feito na tela inicial (/) — o papel (super_admin)
+# decide o destino. /admin/login e /admin/logout só mexem no tpc_session.
 @app.get("/admin/login")
-def admin_login_page(request: Request):
-    if auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+def admin_login_page():
     return RedirectResponse(url=f"{settings.base_path}/", status_code=302)
 
 
 @app.post("/admin/logout")
 def admin_logout():
     response = RedirectResponse(url=f"{settings.base_path}/", status_code=302)
-    response.delete_cookie(key=auth.ADMIN_COOKIE, path="/")
+    response.delete_cookie(key=auth.JWT_COOKIE, path="/")
+    response.delete_cookie(key=auth.IMPERSONATE_COOKIE, path="/")
     return response
 
 
-def _admin_guard(request: Request):
-    if not auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
-        return RedirectResponse(url=f"{settings.base_path}/", status_code=302)
-    return None
+@app.post("/admin/impersonate/{tenant_id}")
+def admin_impersonate(tenant_id: str, request: Request):
+    user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    with get_session() as s:
+        if s.get(Company, tenant_id) is None:
+            return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    response = RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+    response.set_cookie(
+        key=auth.IMPERSONATE_COOKIE,
+        value=auth.make_impersonation_token(tenant_id),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=8 * 3600,
+        path="/",
+    )
+    return response
+
+
+@app.post("/admin/impersonate/stop")
+def admin_impersonate_stop():
+    response = RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    response.delete_cookie(key=auth.IMPERSONATE_COOKIE, path="/")
+    return response
 
 
 @app.get("/admin")
 def admin_dashboard(request: Request):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
     with get_session() as s:
         users = s.query(User).order_by(User.created_at.desc()).all()
         counts = dict(
@@ -788,6 +883,7 @@ def admin_dashboard(request: Request):
             .group_by(Lead.user_id)
             .all()
         )
+        tenant_nomes = {c.id: c.nome for c in s.query(Company).all()}
         rows = [
             {
                 "id": u.id,
@@ -796,6 +892,8 @@ def admin_dashboard(request: Request):
                 "whatsapp": u.whatsapp,
                 "profissao": u.profissao,
                 "origem": u.origem,
+                "role": u.role,
+                "empresa": tenant_nomes.get(u.tenant_id) if u.tenant_id else None,
                 "created_at": u.created_at,
                 "testes": counts.get(u.id, 0),
             }
@@ -811,9 +909,9 @@ def admin_dashboard(request: Request):
 
 @app.get("/admin/users/{user_id}")
 def admin_user_detail(user_id: str, request: Request):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
     with get_session() as s:
         user = s.get(User, user_id)
         if user is None:
@@ -845,9 +943,9 @@ def admin_user_detail(user_id: str, request: Request):
 
 @app.get("/admin/results/{token}")
 def admin_result_detail(token: str, request: Request):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
     with get_session() as s:
         lead = s.get(Lead, token)
         if lead is None:
@@ -890,26 +988,53 @@ def admin_create_empresa(
     manager_email: str = Form(...),
     manager_password: str = Form(...),
 ):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
     nome = nome.strip()
     email_norm = manager_email.lower().strip()
+    if settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip():
+        raise HTTPException(400, "Esse e-mail é reservado ao super admin")
     with get_session() as s:
+        existing = s.query(User).filter(User.email == email_norm).first()
+        if existing is not None and existing.role == auth.SUPER_ADMIN:
+            raise HTTPException(400, "Esse e-mail é de um super admin")
+        if existing is not None and existing.tenant_id:
+            raise HTTPException(400, "Esse e-mail já pertence a outra empresa")
         base = _slugify(nome)
         slug = base
         i = 2
         while s.query(Company).filter(Company.slug == slug).first() is not None:
             slug = f"{base}-{i}"
             i += 1
+        pw_hash = auth.hash_password(manager_password) if manager_password else ""
         company = Company(
             id=uuid.uuid4().hex,
             nome=nome,
             slug=slug,
             manager_email=email_norm,
-            manager_password_hash=auth.hash_password(manager_password) if manager_password else "",
+            manager_password_hash=pw_hash,
         )
         s.add(company)
+        s.flush()
+        # O gestor é um User role=admin do tenant (promove um existente sem tenant,
+        # ou cria um novo). É por ele que o gestor loga na tela única.
+        if existing is None:
+            s.add(User(
+                id=auth.new_user_id(),
+                email=email_norm,
+                password_hash=pw_hash,
+                nome=nome,
+                sobrenome="",
+                whatsapp="",
+                role=auth.ADMIN,
+                tenant_id=company.id,
+            ))
+        else:
+            existing.role = auth.ADMIN
+            existing.tenant_id = company.id
+            if manager_password:
+                existing.password_hash = pw_hash
         s.commit()
         company_id = company.id
     return RedirectResponse(url=f"{settings.base_path}/admin/empresas/{company_id}", status_code=302)
@@ -917,9 +1042,9 @@ def admin_create_empresa(
 
 @app.get("/admin/empresas/{company_id}")
 def admin_empresa_detail(company_id: str, request: Request):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
     with get_session() as s:
         company = s.get(Company, company_id)
         if company is None:
@@ -947,15 +1072,51 @@ def admin_empresa_detail(company_id: str, request: Request):
 
 @app.post("/admin/empresas/{company_id}/senha")
 def admin_reset_manager_password(company_id: str, request: Request, manager_email: str = Form(...), manager_password: str = Form(...)):
-    guard = _admin_guard(request)
-    if guard:
-        return guard
+    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    email_norm = manager_email.lower().strip()
+    if settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip():
+        raise HTTPException(400, "Esse e-mail é reservado ao super admin")
     with get_session() as s:
         company = s.get(Company, company_id)
         if company is None:
             raise HTTPException(404, "Empresa não encontrada")
-        company.manager_email = manager_email.lower().strip()
-        if manager_password:
-            company.manager_password_hash = auth.hash_password(manager_password)
+        # E-mail já usado por OUTRA conta (unique global) → recusa sem estourar 500.
+        clash = s.query(User).filter(User.email == email_norm).first()
+        admin_user = (
+            s.query(User)
+            .filter(User.tenant_id == company_id, User.role == auth.ADMIN)
+            .first()
+        )
+        if clash is not None and (admin_user is None or clash.id != admin_user.id):
+            raise HTTPException(400, "Esse e-mail já está em uso por outra conta")
+        pw_hash = auth.hash_password(manager_password) if manager_password else None
+        company.manager_email = email_norm
+        if pw_hash:
+            company.manager_password_hash = pw_hash
+        # Reflete no User admin do tenant (é ele quem autentica de fato).
+        if admin_user is not None:
+            admin_user.email = email_norm
+            if pw_hash:
+                admin_user.password_hash = pw_hash
+        else:
+            existing = clash
+            if existing is None:
+                s.add(User(
+                    id=auth.new_user_id(),
+                    email=email_norm,
+                    password_hash=pw_hash or "",
+                    nome=company.nome,
+                    sobrenome="",
+                    whatsapp="",
+                    role=auth.ADMIN,
+                    tenant_id=company_id,
+                ))
+            elif not existing.tenant_id:
+                existing.role = auth.ADMIN
+                existing.tenant_id = company_id
+                if pw_hash:
+                    existing.password_hash = pw_hash
         s.commit()
     return RedirectResponse(url=f"{settings.base_path}/admin/empresas/{company_id}", status_code=302)

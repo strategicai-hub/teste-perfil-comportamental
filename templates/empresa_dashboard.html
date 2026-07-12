@@ -20,11 +20,31 @@
         <img src="{{ base_path }}/assets/favicon-sai.png" alt="Strategic AI" class="h-8 w-auto">
         <span>{{ company.nome }}</span>
       </div>
-      <form method="POST" action="{{ base_path }}/empresa/logout">
-        <button class="rounded-md bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-sm text-slate-800">Sair</button>
-      </form>
+      <div class="flex items-center gap-2 text-sm">
+        {% if not impersonating %}
+        <a href="{{ base_path }}/" class="rounded-md bg-teal-50 hover:bg-teal-100 px-3 py-1.5 text-teal-800">Responder testes</a>
+        {% endif %}
+        {% if impersonating %}
+        <form method="POST" action="{{ base_path }}/admin/impersonate/stop">
+          <button class="rounded-md bg-amber-100 hover:bg-amber-200 px-3 py-1.5 text-amber-800">Voltar ao admin</button>
+        </form>
+        {% else %}
+        <form method="POST" action="{{ base_path }}/empresa/logout">
+          <button class="rounded-md bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-800">Sair</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </header>
+
+  {% if impersonating %}
+  <div class="bg-amber-100 border-b border-amber-200 text-amber-900 text-sm">
+    <div class="mx-auto max-w-5xl px-4 py-2 flex items-center justify-between">
+      <span>Você está vendo como <strong>{{ impersonating }}</strong> (modo super admin).</span>
+      <form method="POST" action="{{ base_path }}/admin/impersonate/stop"><button class="underline">Voltar ao admin</button></form>
+    </div>
+  </div>
+  {% endif %}
 
   <main class="flex-1">
     <div class="mx-auto max-w-5xl px-4 py-8">
@@ -55,6 +75,37 @@
         {% endif %}
       </div>
 
+      <!-- Colaboradores (resultado individual é privado; aqui só o agregado) -->
+      <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
+        <h2 class="text-sm font-medium text-slate-700 mb-1">Colaboradores</h2>
+        <p class="text-xs text-slate-500 mb-3">Quem se cadastrou pelo link da empresa. As respostas individuais são privadas — você vê apenas o resultado agregado.</p>
+        {% if colaboradores %}
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-slate-500 text-xs">
+              <tr><th class="text-left py-1 font-medium">Nome</th><th class="text-left py-1 font-medium">E-mail</th><th class="text-center py-1 font-medium">Testes</th><th class="text-right py-1 font-medium">Ação</th></tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for c in colaboradores %}
+              <tr class="{{ 'opacity-50' if c.blocked }}">
+                <td class="py-2 text-slate-800">{{ c.nome }}</td>
+                <td class="py-2 text-slate-600">{{ c.email }}</td>
+                <td class="py-2 text-center text-slate-700">{{ c.testes }}</td>
+                <td class="py-2 text-right">
+                  <form method="POST" action="{{ base_path }}/empresa/colaboradores/{{ c.id }}/block">
+                    <button class="text-xs hover:underline {{ 'text-teal-700' if c.blocked else 'text-red-600' }}">{{ 'Desbloquear' if c.blocked else 'Bloquear' }}</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">Nenhum colaborador cadastrado ainda. Compartilhe o link da empresa.</p>
+        {% endif %}
+      </div>
+
       <!-- Seletor de escopo -->
       <div class="flex flex-wrap gap-2 mb-6">
         <a href="{{ base_path }}/empresa"
@@ -75,8 +126,11 @@
           <span class="text-sm text-slate-500">{{ agg.respondentes }} respondente(s)</span>
         </div>
 
-        {% if agg.respondentes == 0 %}
-          <p class="text-center text-slate-500 py-10">Ainda não há respostas concluídas neste recorte.</p>
+        {% if agg.respondentes < 3 %}
+          <p class="text-center text-slate-500 py-10">
+            {% if agg.respondentes == 0 %}Ainda não há respostas concluídas neste recorte.
+            {% else %}Para preservar o anonimato, o resultado só é exibido com pelo menos 3 respondentes concluídos neste recorte (atual: {{ agg.respondentes }}).{% endif %}
+          </p>
         {% else %}
           <!-- legenda -->
           <div class="flex flex-wrap gap-4 mb-6 text-xs text-slate-600">

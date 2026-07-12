@@ -45,6 +45,7 @@
       </button>
       <div class="flex items-center gap-3 text-sm">
         <span class="text-slate-600 hidden sm:inline" x-text="user ? (user.nome + ' ' + user.sobrenome) : ''"></span>
+        <a x-show="user && user.role === 'admin'" href="empresa" class="rounded-md bg-teal-50 hover:bg-teal-100 px-3 py-1.5 text-teal-800">Painel da empresa</a>
         <button @click="logout()" class="rounded-md bg-slate-100 hover:bg-slate-200 px-3 py-1.5 text-slate-800">Sair</button>
       </div>
     </div>
@@ -60,6 +61,7 @@
           <span class="font-semibold text-slate-900">Testes Comportamentais</span>
         </div>
         <h1 class="text-xl font-semibold">Entrar</h1>
+        <p x-show="company" class="text-sm text-slate-600 -mt-2">Empresa: <strong x-text="company ? company.nome : ''"></strong></p>
         <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
         <form @submit.prevent="doLogin()" class="space-y-4">
           <div>
@@ -82,6 +84,12 @@
           </button>
           <div class="flex flex-col items-center gap-1 pt-2">
             <button type="button" @click="goView('forgot')" class="text-sm text-teal-700 hover:text-teal-900">Esqueci minha senha</button>
+            <template x-if="company">
+              <p class="text-sm text-slate-600">
+                Primeira vez?
+                <button type="button" @click="goView('register')" class="text-teal-700 hover:text-teal-900">Criar conta</button>
+              </p>
+            </template>
           </div>
         </form>
       </div>
@@ -95,6 +103,7 @@
           <span class="font-semibold text-slate-900">Testes Comportamentais</span>
         </div>
         <h1 class="text-xl font-semibold">Criar conta</h1>
+        <p x-show="company" class="text-sm text-slate-600 -mt-2">Cadastrando para <strong x-text="company ? company.nome : ''"></strong></p>
         <p x-show="error" x-text="error" class="text-sm text-red-600"></p>
         <form @submit.prevent="doRegister()" class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -250,6 +259,9 @@
       <div class="mx-auto max-w-5xl px-4">
         <div x-show="company" class="mb-6 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
           Você está respondendo para a empresa <strong x-text="company ? company.nome : ''"></strong>.
+        </div>
+        <div x-show="user && user.role === 'member' && !user.tenant_id" class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Sua conta não está vinculada a uma empresa. Use o link da sua empresa para responder os testes organizacionais.
         </div>
         <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Seus testes</h1>
         <p class="text-slate-600 mb-8">Escolha um teste para iniciar ou ver seus resultados.</p>

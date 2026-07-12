@@ -11,8 +11,13 @@ from .db import Company, User, get_session
 
 JWT_ALG = "HS256"
 JWT_COOKIE = "tpc_session"
-ADMIN_COOKIE = "tpc_admin"
-MANAGER_COOKIE = "tpc_manager"
+# Cookie separado (JWT curto e assinado) usado só quando o super admin "entra"
+# num tenant. Nunca reescrevemos o tpc_session — impersonation é uma camada acima.
+IMPERSONATE_COOKIE = "tpc_impersonate"
+
+SUPER_ADMIN = "super_admin"
+ADMIN = "admin"
+MEMBER = "member"
 
 
 def hash_password(password: str) -> str:
@@ -31,6 +36,9 @@ def new_user_id() -> str:
 
 
 def create_jwt(user_id: str) -> str:
+    # Só `sub`. Papel e tenant NUNCA saem do JWT para autorização — são relidos do
+    # banco a cada request (ver get_current_user). Assim JWTs antigos continuam
+    # válidos e um rebaixamento de papel tem efeito imediato.
     payload = {
         "sub": user_id,
         "iat": datetime.utcnow(),
@@ -70,89 +78,66 @@ def get_current_user_optional(request: Request) -> User | None:
 
 
 # ---------------------------------------------------------------------------
-# Super admin (login pela tela inicial; só o e-mail SUPER_ADMIN_EMAIL entra)
+# Papéis / autorização (fonte de verdade é o User carregado do banco)
 # ---------------------------------------------------------------------------
-def _super_admin_creds() -> tuple[str, str]:
-    email = (settings.super_admin_email or "").strip()
-    password = settings.super_admin_password or settings.admin_pass or ""
-    return email, password
+def is_super_admin(user: User | None) -> bool:
+    return bool(user and user.role == SUPER_ADMIN)
 
 
-def valid_super_admin(email: str, password: str) -> bool:
-    exp_email, exp_pass = _super_admin_creds()
-    if not exp_email or not exp_pass:
-        return False
-    # compare_digest com str exige ASCII puro (levanta TypeError com acentos).
-    # valid_super_admin roda em TODO /api/auth/login, então uma senha não-ASCII de
-    # usuário comum quebraria o login com 500 — por isso comparamos bytes.
-    email_ok = secrets.compare_digest(
-        email.strip().lower().encode("utf-8"), exp_email.lower().encode("utf-8")
-    )
-    pass_ok = secrets.compare_digest(password.encode("utf-8"), exp_pass.encode("utf-8"))
-    return email_ok and pass_ok
+def is_admin(user: User | None) -> bool:
+    return bool(user and user.role in (ADMIN, SUPER_ADMIN))
 
 
-def make_admin_cookie() -> str:
-    exp_email, _ = _super_admin_creds()
+def require_super_admin(request: Request) -> User:
+    user = get_current_user(request)
+    if user.role != SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acesso restrito")
+    return user
+
+
+def require_admin_or_super(request: Request) -> User:
+    user = get_current_user(request)
+    if user.role not in (ADMIN, SUPER_ADMIN):
+        raise HTTPException(status_code=403, detail="Acesso restrito")
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Impersonation — super admin "entra" num tenant
+# ---------------------------------------------------------------------------
+def make_impersonation_token(tenant_id: str) -> str:
     return jwt.encode(
-        {"admin": exp_email, "exp": datetime.utcnow() + timedelta(hours=12)},
+        {"imp": tenant_id, "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret,
         algorithm=JWT_ALG,
     )
 
 
-def is_admin_cookie_valid(cookie_value: str | None) -> bool:
-    if not cookie_value:
-        return False
-    exp_email, _ = _super_admin_creds()
-    if not exp_email:
-        return False
-    try:
-        payload = jwt.decode(cookie_value, settings.jwt_secret, algorithms=[JWT_ALG])
-        return payload.get("admin") == exp_email
-    except jwt.PyJWTError:
-        return False
-
-
-def require_admin(request: Request) -> bool:
-    cookie_value = request.cookies.get(ADMIN_COOKIE)
-    if not is_admin_cookie_valid(cookie_value):
-        raise HTTPException(status_code=401, detail="Admin não autenticado")
-    return True
-
-
-# ---------------------------------------------------------------------------
-# Gestor da empresa (painel do cliente)
-# ---------------------------------------------------------------------------
-def create_manager_jwt(company_id: str) -> str:
-    return jwt.encode(
-        {"mgr": company_id, "exp": datetime.utcnow() + timedelta(hours=settings.jwt_expire_hours)},
-        settings.jwt_secret,
-        algorithm=JWT_ALG,
-    )
-
-
-def decode_manager_jwt(token: str) -> str | None:
+def decode_impersonation_token(token: str) -> str | None:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALG])
-        return payload.get("mgr")
+        return payload.get("imp")
     except jwt.PyJWTError:
         return None
 
 
-def get_current_company(request: Request) -> Company:
-    token = request.cookies.get(MANAGER_COOKIE)
-    if not token:
-        raise HTTPException(status_code=401, detail="Gestor não autenticado")
-    company_id = decode_manager_jwt(token)
-    if not company_id:
-        raise HTTPException(status_code=401, detail="Sessão inválida")
-    with get_session() as s:
-        company = s.get(Company, company_id)
-        if company is None:
-            raise HTTPException(status_code=401, detail="Empresa não encontrada")
-        s.expunge(company)
-        return company
+def get_effective_tenant_id(request: Request, user: User) -> str | None:
+    """Tenant que o usuário está enxergando.
+
+    Só o super admin pode impersonar; qualquer outro papel ignora o cookie de
+    impersonation (defesa contra cookie forjado/rebaixamento). O tenant do cookie
+    é validado contra o banco a cada request.
+    """
+    if user.role != SUPER_ADMIN:
+        return user.tenant_id
+    token = request.cookies.get(IMPERSONATE_COOKIE)
+    if token:
+        tid = decode_impersonation_token(token)
+        if tid:
+            with get_session() as s:
+                if s.get(Company, tid) is not None:
+                    return tid
+    return user.tenant_id
 
 
 def generate_reset_token() -> str:
