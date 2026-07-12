@@ -48,5 +48,16 @@
       www.strategicai.com.br &nbsp;&copy;&nbsp; Todos os direitos reservados
     </div>
   </footer>
+
+  <script>
+    function togglePw(btn) {
+      var input = btn.parentElement.querySelector('input');
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.querySelector('[data-eye]').classList.toggle('hidden', show);
+      btn.querySelector('[data-eye-off]').classList.toggle('hidden', !show);
+      btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+    }
+  </script>
 </body>
 </html>

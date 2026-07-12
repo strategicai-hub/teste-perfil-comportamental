@@ -13,9 +13,11 @@ Aplicação web que substitui a página Wix `strategicai.com.br/teste-perfil-com
 
 ## URL pública
 
-`https://teste.strategicai.com.br/perfil-comportamental`
+`https://teste.strategicai.com.br/`
 
-Traefik faz `StripPrefix` para `/perfil-comportamental`, então o FastAPI serve tudo a partir de `/` internamente.
+Traefik roteia só pelo Host (sem PathPrefix nem StripPrefix); o FastAPI serve tudo a partir de `/` e `BASE_PATH` fica vazio. Links antigos com o prefixo `/perfil-comportamental/*` recebem redirect 301 para a raiz (rota `legacy_prefix_redirect` em `app/main.py`).
+
+O super admin entra pela própria tela de login da raiz: e-mail `atendimento@strategicai.com.br` (`SUPER_ADMIN_EMAIL`) + `SUPER_ADMIN_PASSWORD` → vai para `/admin`. Não existe mais página `/admin/login`.
 
 ## Regra obrigatória: commit, push e deploy
 
@@ -37,7 +39,7 @@ O processo de redeploy deste projeto é sempre:
 1. Criar o tarball: `tar -czf /tmp/build-context.tar.gz --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='data' .`
 2. Build via Portainer API (endpoint `<ID_ENDPOINT>`, tag `ghcr.io/strategicai-hub/teste-perfil-comportamental:latest`)
 3. Force-update do serviço Swarm (`<SERVICE_ID>`) com o spec completo incrementando `ForceUpdate`
-4. Verificar HTTP 200 em `https://teste.strategicai.com.br/perfil-comportamental/`
+4. Verificar HTTP 200 em `https://teste.strategicai.com.br/`
 5. Verificar se os containers estão rodando via `docker service ps <SERVICE_ID>` ou Portainer API
    - Se algum container estiver com estado diferente de `running`, ler os logs (`docker service logs <SERVICE_ID> --tail 50`) e corrigir o erro antes de encerrar.
 

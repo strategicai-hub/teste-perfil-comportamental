@@ -8,7 +8,7 @@ services:
       - network_public
     environment:
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
-      - BASE_PATH=${BASE_PATH:-/perfil-comportamental}
+      - BASE_PATH=${BASE_PATH:-}
       - DATABASE_URL=sqlite:////data/app.db
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}
@@ -38,12 +38,10 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=network_public"
-        - "traefik.http.routers.perfil-comportamental.rule=Host(`teste.strategicai.com.br`) && PathPrefix(`/perfil-comportamental`)"
+        - "traefik.http.routers.perfil-comportamental.rule=Host(`teste.strategicai.com.br`)"
         - "traefik.http.routers.perfil-comportamental.entrypoints=websecure"
         - "traefik.http.routers.perfil-comportamental.tls=true"
         - "traefik.http.routers.perfil-comportamental.tls.certresolver=letsencryptresolver"
-        - "traefik.http.routers.perfil-comportamental.middlewares=perfil-strip"
-        - "traefik.http.middlewares.perfil-strip.stripprefix.prefixes=/perfil-comportamental"
         - "traefik.http.services.perfil-comportamental.loadbalancer.server.port=8000"
 
 volumes:

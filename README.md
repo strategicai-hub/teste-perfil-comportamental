@@ -24,8 +24,9 @@ Aplicação web que substitui a página Wix com captação estruturada de leads,
 
 ## URLs
 
-- **Aplicação**: https://teste.strategicai.com.br/perfil-comportamental
-- **Link de retorno**: https://teste.strategicai.com.br/perfil-comportamental/r/{token}
+- **Aplicação**: https://teste.strategicai.com.br/
+- **Link de retorno**: https://teste.strategicai.com.br/r/{token}
+- Links antigos com o prefixo `/perfil-comportamental/*` recebem redirect 301 para a raiz.
 
 ## Desenvolvimento Local
 

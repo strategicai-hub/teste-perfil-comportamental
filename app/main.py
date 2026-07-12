@@ -136,6 +136,20 @@ def retorno_legado(token: str):
     return RedirectResponse(url=f"{settings.base_path}/?r={quote(token)}", status_code=302)
 
 
+@app.api_route("/perfil-comportamental", methods=["GET", "POST"])
+@app.api_route("/perfil-comportamental/{rest:path}", methods=["GET", "POST"])
+def legacy_prefix_redirect(request: Request, rest: str = ""):
+    # Links antigos (e-mails/WhatsApp já enviados) usavam o prefixo /perfil-comportamental.
+    # O app agora vive na raiz do domínio — redireciona preservando path e query.
+    # lstrip evita open redirect: sem ele, "/perfil-comportamental//evil.com" viraria
+    # Location "//evil.com" (URL protocol-relative → navegador vai para https://evil.com).
+    target = f"{settings.base_path}/{rest.lstrip('/\\')}"
+    if request.url.query:
+        target += f"?{request.url.query}"
+    # 308 preserva o método (POST de forms antigos continua POST) e é permanente.
+    return RedirectResponse(url=target, status_code=308)
+
+
 @app.get("/reset")
 def reset_page():
     return FileResponse(INDEX_FILE)
@@ -184,6 +198,18 @@ def _clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key=auth.JWT_COOKIE, path="/")
 
 
+def _set_admin_cookie(response: Response) -> None:
+    response.set_cookie(
+        key=auth.ADMIN_COOKIE,
+        value=auth.make_admin_cookie(),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=12 * 3600,
+        path="/",
+    )
+
+
 def _user_to_dict(user: User) -> dict:
     return {
         "id": user.id,
@@ -200,6 +226,10 @@ def _user_to_dict(user: User) -> dict:
 @app.post("/api/auth/register")
 def register(data: RegisterIn, response: Response):
     email = data.email.lower().strip()
+    # O e-mail do super admin é reservado: se um User comum fosse criado com ele,
+    # o login sempre cairia no branch de super admin e a conta ficaria inacessível.
+    if settings.super_admin_email and email == settings.super_admin_email.lower().strip():
+        raise HTTPException(status_code=400, detail="E-mail já cadastrado")
     with get_session() as s:
         existing = s.query(User).filter(User.email == email).first()
         if existing is not None:
@@ -227,6 +257,11 @@ def register(data: RegisterIn, response: Response):
 @app.post("/api/auth/login")
 def login(data: LoginIn, response: Response):
     email = data.email.lower().strip()
+    # Super admin entra pela mesma tela de login da raiz: só o e-mail
+    # SUPER_ADMIN_EMAIL (atendimento@strategicai.com.br) com a senha correta.
+    if auth.valid_super_admin(email, data.password):
+        _set_admin_cookie(response)
+        return {"super_admin": True, "redirect": f"{settings.base_path}/admin"}
     with get_session() as s:
         user = s.query(User).filter(User.email == email).first()
         if user is None or user.blocked or not auth.verify_password(data.password, user.password_hash):
@@ -715,44 +750,26 @@ def empresa_delete_area(area_id: int, request: Request):
 # =========================================================================
 # SUPER ADMIN
 # =========================================================================
+# O login do super admin é feito na tela inicial (/) com o e-mail
+# SUPER_ADMIN_EMAIL — ver /api/auth/login. A antiga página /admin/login
+# só redireciona para a raiz.
 @app.get("/admin/login")
 def admin_login_page(request: Request):
     if auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
         return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
-
-
-@app.post("/admin/login")
-def admin_login(request: Request, username: str = Form(...), password: str = Form(...)):
-    if auth.valid_super_admin(username, password):
-        response = RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-        response.set_cookie(
-            key=auth.ADMIN_COOKIE,
-            value=auth.make_admin_cookie(),
-            httponly=True,
-            secure=settings.cookie_secure,
-            samesite="lax",
-            max_age=12 * 3600,
-            path="/",
-        )
-        return response
-    return templates.TemplateResponse(
-        "admin_login.html",
-        {"request": request, "error": "Credenciais inválidas"},
-        status_code=401,
-    )
+    return RedirectResponse(url=f"{settings.base_path}/", status_code=302)
 
 
 @app.post("/admin/logout")
 def admin_logout():
-    response = RedirectResponse(url=f"{settings.base_path}/admin/login", status_code=302)
+    response = RedirectResponse(url=f"{settings.base_path}/", status_code=302)
     response.delete_cookie(key=auth.ADMIN_COOKIE, path="/")
     return response
 
 
 def _admin_guard(request: Request):
     if not auth.is_admin_cookie_valid(request.cookies.get(auth.ADMIN_COOKIE)):
-        return RedirectResponse(url=f"{settings.base_path}/admin/login", status_code=302)
+        return RedirectResponse(url=f"{settings.base_path}/", status_code=302)
     return None
 
 

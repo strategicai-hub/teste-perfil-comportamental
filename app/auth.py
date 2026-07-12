@@ -70,10 +70,10 @@ def get_current_user_optional(request: Request) -> User | None:
 
 
 # ---------------------------------------------------------------------------
-# Super admin (credenciais do SAI Comercial, via .env)
+# Super admin (login pela tela inicial; só o e-mail SUPER_ADMIN_EMAIL entra)
 # ---------------------------------------------------------------------------
 def _super_admin_creds() -> tuple[str, str]:
-    email = (settings.super_admin_email or settings.admin_user or "").strip()
+    email = (settings.super_admin_email or "").strip()
     password = settings.super_admin_password or settings.admin_pass or ""
     return email, password
 
@@ -82,8 +82,13 @@ def valid_super_admin(email: str, password: str) -> bool:
     exp_email, exp_pass = _super_admin_creds()
     if not exp_email or not exp_pass:
         return False
-    email_ok = secrets.compare_digest(email.strip().lower(), exp_email.lower())
-    pass_ok = secrets.compare_digest(password, exp_pass)
+    # compare_digest com str exige ASCII puro (levanta TypeError com acentos).
+    # valid_super_admin roda em TODO /api/auth/login, então uma senha não-ASCII de
+    # usuário comum quebraria o login com 500 — por isso comparamos bytes.
+    email_ok = secrets.compare_digest(
+        email.strip().lower().encode("utf-8"), exp_email.lower().encode("utf-8")
+    )
+    pass_ok = secrets.compare_digest(password.encode("utf-8"), exp_pass.encode("utf-8"))
     return email_ok and pass_ok
 
 

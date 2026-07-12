@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    public_base_url: str = "http://localhost:8000/perfil-comportamental"
+    public_base_url: str = "http://localhost:8000"
     base_path: str = ""
     database_url: str = "sqlite:///./data/app.db"
 
@@ -28,9 +28,8 @@ class Settings(BaseSettings):
 
     admin_user: str = ""
     admin_pass: str = ""
-    # Super admin — mesmas credenciais do SAI Comercial (definir no .env).
-    # Se vazios, cai no admin_user/admin_pass legado.
-    super_admin_email: str = ""
+    # Super admin — login pela tela inicial. Só este e-mail entra no /admin.
+    super_admin_email: str = "atendimento@strategicai.com.br"
     super_admin_password: str = ""
     jwt_secret: str = ""
     jwt_expire_hours: int = 24

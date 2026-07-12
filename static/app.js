@@ -9,6 +9,7 @@ function app() {
     authForm: { email: '', password: '' },
     registerForm: { nome: '', sobrenome: '', whatsapp: '', email: '', profissao: '', origem: '', password: '' },
     forgotSent: false,
+    showPw: { login: false, register: false, resetNew: false, resetConfirm: false },
 
     resetToken: null,
     resetDone: false,
@@ -97,9 +98,14 @@ function app() {
       }
     },
 
+    resetShowPw() {
+      this.showPw = { login: false, register: false, resetNew: false, resetConfirm: false };
+    },
+
     goView(view) {
       this.error = '';
       this.view = view;
+      this.resetShowPw();
       if (view === 'forgot') this.forgotSent = false;
     },
 
@@ -118,6 +124,11 @@ function app() {
           throw new Error(err.detail || 'E-mail ou senha inválidos');
         }
         const data = await r.json();
+        if (data.super_admin) {
+          // Super admin: painel server-side em /admin
+          window.location.href = data.redirect || 'admin';
+          return;
+        }
         this.user = data.user;
         this.authForm = { email: '', password: '' };
         await this.goDashboard();
@@ -166,6 +177,7 @@ function app() {
       this.result = null;
       this.chat = [];
       this.answers = {};
+      this.resetShowPw();
       this.view = 'login';
     },
 
