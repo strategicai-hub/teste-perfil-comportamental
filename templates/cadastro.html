@@ -1,0 +1,37 @@
+{% extends "_auth.html" %}
+{% block title %}Criar conta — {{ company.nome }}{% endblock %}
+{% block width %}max-w-md{% endblock %}
+{% block card %}
+  <h1 class="text-xl font-semibold text-slate-900">Criar conta</h1>
+  <p class="text-sm text-slate-600 -mt-2">Cadastrando para <strong>{{ company.nome }}</strong></p>
+  {% if error %}<p class="text-sm text-red-600">{{ error }}</p>{% endif %}
+  <form method="POST" action="{{ base_path }}/cadastro/{{ company.slug }}" class="space-y-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="label" for="nome">Nome</label>
+        <input id="nome" name="nome" type="text" required value="{{ form.nome or '' }}" class="input" autofocus>
+      </div>
+      <div>
+        <label class="label" for="sobrenome">Sobrenome</label>
+        <input id="sobrenome" name="sobrenome" type="text" required value="{{ form.sobrenome or '' }}" class="input">
+      </div>
+    </div>
+    <div>
+      <label class="label" for="email">E-mail</label>
+      <input id="email" name="email" type="email" required value="{{ form.email or '' }}" class="input">
+    </div>
+    <div>
+      <label class="label" for="senha">Senha (mínimo 8 caracteres)</label>
+      {{ pwfield('password', 'senha', minlength='8') }}
+    </div>
+    <div>
+      <label class="label" for="senha2">Confirmar senha</label>
+      {{ pwfield('password2', 'senha2', minlength='8') }}
+    </div>
+    <button type="submit" class="btn-primary w-full">Criar conta</button>
+    <p class="text-sm text-center text-slate-600">
+      Já tem conta?
+      <a href="{{ base_path }}/entrar" class="text-teal-700 hover:text-teal-900">Entrar</a>
+    </p>
+  </form>
+{% endblock %}

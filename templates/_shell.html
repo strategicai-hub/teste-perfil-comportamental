@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Strategic AI{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ base_path }}/assets/favicon-sai.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ base_path }}/static/style.css">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    [x-cloak] { display: none !important; }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+
+{% macro icon(key) %}
+<svg class="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+  {% if key == 'testes' %}<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+  {% elif key == 'empresa' or key == 'empresas' %}<path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2M5 21H3m4-14h.01M11 7h.01M7 11h.01M11 11h.01M7 15h.01M11 15h.01"/>
+  {% elif key == 'resultados' %}<path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+  {% elif key == 'usuarios' %}<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87m-4 5.87H2v-2a4 4 0 013-3.87m10 0a4 4 0 10-6 0m6 0a4 4 0 00-6 0m9-9a3 3 0 11-6 0 3 3 0 016 0z"/>
+  {% elif key == 'configuracoes' %}<path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+  {% endif %}
+</svg>
+{% endmacro %}
+
+{% macro navitem(key, label, href, active) %}
+<a href="{{ href }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {{ 'bg-teal-50 text-teal-700' if active == key else 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+  {{ icon(key) }}<span class="flex-1 truncate">{{ label }}</span>
+</a>
+{% endmacro %}
+
+<body class="bg-gray-50 text-slate-800" x-data="{ open: false }">
+  <div class="flex min-h-screen">
+    <!-- backdrop mobile -->
+    <div x-show="open" x-cloak @click="open = false" class="fixed inset-0 z-30 bg-black/40 md:hidden"></div>
+
+    <!-- SIDEBAR -->
+    <aside class="fixed inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] flex-col border-r border-gray-200 bg-white transition-transform duration-200 ease-out -translate-x-full md:translate-x-0"
+           :class="open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
+      <div class="flex items-center border-b border-gray-200 px-5 py-4">
+        <a href="{{ base_path }}/" class="flex items-center">
+          <img src="{{ base_path }}/assets/logo-sai.png" alt="Strategic AI" class="h-11 w-auto">
+        </a>
+      </div>
+
+      <nav class="flex-1 space-y-1 overflow-y-auto p-3">
+        {% if shell_user.role == 'super_admin' %}
+          {{ navitem('empresas', 'Empresas', base_path ~ '/admin', active) }}
+          {{ navitem('usuarios', 'Usuários', base_path ~ '/admin/usuarios', active) }}
+        {% else %}
+          {{ navitem('testes', 'Testes', base_path ~ '/testes', active) }}
+          {% if shell_user.role == 'admin' %}
+            {{ navitem('empresa', 'Empresa', base_path ~ '/empresa', active) }}
+            {{ navitem('resultados', 'Resultados', base_path ~ '/empresa/resultados', active) }}
+          {% endif %}
+        {% endif %}
+      </nav>
+
+      <div class="border-t border-gray-200 p-3 space-y-1">
+        {{ navitem('configuracoes', 'Configurações', base_path ~ '/configuracoes', active) }}
+        <div class="px-3 pt-2">
+          <div class="truncate text-sm font-medium text-gray-700">{{ shell_user.nome }}</div>
+          <div class="text-xs text-gray-400">{{ shell_user.role_label }}</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CONTEÚDO -->
+    <div class="flex min-w-0 flex-1 flex-col md:ml-64">
+      <div class="sticky top-0 z-20">
+        <header class="flex items-center justify-between border-b border-gray-200 bg-white px-3 py-2 sm:px-4">
+          <button type="button" @click="open = true" aria-label="Abrir menu" class="-ml-1 rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 md:hidden">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <div class="ml-auto flex items-center gap-3 sm:gap-4">
+            <span class="hidden max-w-[260px] truncate text-sm text-gray-600 sm:inline">{{ shell_user.email }}</span>
+            <form method="POST" action="{{ base_path }}/sair">
+              <button type="submit" class="px-2 py-1 text-sm font-medium text-red-600 hover:text-red-700">Sair</button>
+            </form>
+          </div>
+        </header>
+
+        {% if impersonating %}
+        <div class="bg-amber-100 border-b border-amber-200 text-amber-900 text-sm">
+          <div class="mx-auto flex items-center justify-between px-4 py-2">
+            <span>Você está vendo como <strong>{{ impersonating }}</strong> (modo super admin).</span>
+            <form method="POST" action="{{ base_path }}/admin/impersonate/stop"><button class="underline">Voltar ao admin</button></form>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <main class="flex-1 overflow-x-hidden p-4 sm:p-6 md:p-8">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <script>
+    function togglePw(btn) {
+      var input = btn.parentElement.querySelector('input');
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      var eye = btn.querySelector('[data-eye]'); var off = btn.querySelector('[data-eye-off]');
+      if (eye) eye.classList.toggle('hidden', show);
+      if (off) off.classList.toggle('hidden', !show);
+      btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+    }
+  </script>
+  {% block body_end %}{% endblock %}
+</body>
+</html>

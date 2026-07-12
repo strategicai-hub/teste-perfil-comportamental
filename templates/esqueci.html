@@ -1,0 +1,22 @@
+{% extends "_auth.html" %}
+{% block title %}Esqueci minha senha — Strategic AI{% endblock %}
+{% block card %}
+  <h1 class="text-xl font-semibold text-slate-900">Esqueci minha senha</h1>
+  {% if sent %}
+    <p class="text-sm text-slate-700">Se houver uma conta com esse e-mail, você receberá um link para redefinir sua senha em breve.</p>
+    <a href="{{ base_path }}/entrar" class="btn-secondary w-full">Voltar ao login</a>
+  {% else %}
+    {% if error %}<p class="text-sm text-red-600">{{ error }}</p>{% endif %}
+    <p class="text-sm text-slate-600">Informe seu e-mail e enviaremos um link para redefinir sua senha.</p>
+    <form method="POST" action="{{ base_path }}/esqueci-senha" class="space-y-4">
+      <div>
+        <label class="label" for="email">E-mail</label>
+        <input id="email" name="email" type="email" required class="input" placeholder="seu@email.com" autofocus>
+      </div>
+      <button type="submit" class="btn-primary w-full">Enviar link</button>
+      <p class="text-sm text-center">
+        <a href="{{ base_path }}/entrar" class="text-teal-700 hover:text-teal-900">Voltar ao login</a>
+      </p>
+    </form>
+  {% endif %}
+{% endblock %}

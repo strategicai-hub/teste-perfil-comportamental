@@ -1,0 +1,26 @@
+{% extends "_auth.html" %}
+{% block title %}Redefinir senha — Strategic AI{% endblock %}
+{% block card %}
+  <h1 class="text-xl font-semibold text-slate-900">Redefinir senha</h1>
+  {% if not token %}
+    <p class="text-sm text-red-600">Link inválido. Solicite um novo.</p>
+    <a href="{{ base_path }}/esqueci-senha" class="btn-secondary w-full">Solicitar novo link</a>
+  {% elif done %}
+    <p class="text-sm text-green-700 font-medium">Senha redefinida com sucesso!</p>
+    <a href="{{ base_path }}/entrar" class="btn-primary w-full">Fazer login</a>
+  {% else %}
+    {% if error %}<p class="text-sm text-red-600">{{ error }}</p>{% endif %}
+    <form method="POST" action="{{ base_path }}/reset" class="space-y-4">
+      <input type="hidden" name="token" value="{{ token }}">
+      <div>
+        <label class="label" for="senha">Nova senha</label>
+        {{ pwfield('password', 'senha', placeholder='Mínimo 8 caracteres', minlength='8') }}
+      </div>
+      <div>
+        <label class="label" for="senha2">Confirmar nova senha</label>
+        {{ pwfield('password2', 'senha2', placeholder='Repita a senha', minlength='8') }}
+      </div>
+      <button type="submit" class="btn-primary w-full">Redefinir senha</button>
+    </form>
+  {% endif %}
+{% endblock %}

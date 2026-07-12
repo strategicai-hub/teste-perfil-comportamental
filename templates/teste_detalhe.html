@@ -1,0 +1,63 @@
+{% extends "_shell.html" %}
+{% block title %}{{ test.nome }} — Strategic AI{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl">
+  <a href="{{ base_path }}/testes" class="text-sm text-teal-700 hover:text-teal-900 mb-2 inline-block">&larr; Voltar</a>
+  <div class="mb-6">
+    <h1 class="text-2xl md:text-3xl font-bold text-slate-900">{{ test.nome }}</h1>
+    <p class="text-slate-600">{{ test.descricao }}</p>
+  </div>
+
+  <div class="card p-5 mb-8">
+    {% if error %}<p class="text-sm text-red-600 mb-3">{{ error }}</p>{% endif %}
+    <form method="POST" action="{{ base_path }}/testes/{{ test.id }}/iniciar" class="space-y-4">
+      {% if needs_area %}
+      <div>
+        <label class="label">Sua área / setor na empresa <span class="text-slate-400">{{ '(' ~ company.nome ~ ')' if company else '' }}</span></label>
+        {% if company and company.areas %}
+        <select name="area" required class="input bg-white">
+          <option value="">Selecione a sua área...</option>
+          {% for a in company.areas %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <p class="text-xs text-amber-600 mt-1">Nenhuma área cadastrada para esta empresa. Fale com o responsável.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="flex items-center justify-end">
+        <button type="submit" class="btn-primary px-5 py-2.5" {{ 'disabled' if needs_area and not (company and company.areas) }}>Fazer novo teste</button>
+      </div>
+    </form>
+  </div>
+
+  <h2 class="text-lg font-semibold text-slate-900 mb-3">Seus resultados anteriores</h2>
+  {% if not history %}
+  <div class="card p-8 text-center text-slate-500">Você ainda não concluiu nenhum teste.</div>
+  {% else %}
+  <div class="space-y-3">
+    {% for h in history %}
+    <a href="{{ base_path }}/resultado/{{ h.token }}" class="card w-full p-5 text-left hover:border-teal-600 hover:shadow-md transition block">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <div class="font-medium text-slate-900">{{ h.concluido_em.strftime('%d/%m/%Y %H:%M') if h.concluido_em else '' }}</div>
+          <div class="text-sm text-slate-600 mt-1">
+            {% if h.resumo and h.resumo.tipo == 'copsoq' %}
+              {% if h.area %}<span class="text-slate-500">{{ h.area }} · </span>{% endif %}
+              {% if h.resumo.top_risco %}Principal foco: <span class="font-semibold text-slate-800">{{ h.resumo.top_risco }}</span>
+              {% else %}Sem focos de risco relevantes{% endif %}
+            {% elif h.resumo and h.resumo.tipo == 'archetype' %}
+              Tubarão <span class="font-semibold text-slate-800">{{ h.resumo.perc.tubarao or 0 }}%</span>
+              · Lobo <span class="font-semibold text-slate-800">{{ h.resumo.perc.lobo or 0 }}%</span>
+              · Águia <span class="font-semibold text-slate-800">{{ h.resumo.perc.aguia or 0 }}%</span>
+              · Gato <span class="font-semibold text-slate-800">{{ h.resumo.perc.gato or 0 }}%</span>
+            {% endif %}
+          </div>
+        </div>
+        <span class="text-teal-700 font-medium">Ver &rarr;</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

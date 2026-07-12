@@ -113,6 +113,38 @@ def _history_resumo(lead: Lead) -> dict:
 
 
 # =========================================================================
+# SHELL / NAVEGAÇÃO
+# =========================================================================
+_ROLE_LABEL = {auth.SUPER_ADMIN: "Super admin", auth.ADMIN: "Gestor", auth.MEMBER: "Colaborador"}
+
+
+def _home_for_role(role: str) -> str:
+    if role == auth.SUPER_ADMIN:
+        return f"{settings.base_path}/admin"
+    if role == auth.ADMIN:
+        return f"{settings.base_path}/empresa"
+    return f"{settings.base_path}/testes"
+
+
+def _shell_user(user: User, role: str | None = None) -> dict:
+    nome = f"{user.nome} {user.sobrenome}".strip() or user.email
+    r = role or user.role
+    return {"nome": nome, "email": user.email, "role": r, "role_label": _ROLE_LABEL.get(r, r)}
+
+
+def _shell_ctx(user: User, active: str, impersonating: str | None = None, role: str | None = None) -> dict:
+    """Contexto do sidebar/topbar para qualquer página que estenda _shell.html."""
+    return {"shell_user": _shell_user(user, role), "active": active, "impersonating": impersonating}
+
+
+def _safe_next(nxt: str | None) -> str | None:
+    """Só aceita caminho local (evita open redirect)."""
+    if nxt and nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return nxt
+    return None
+
+
+# =========================================================================
 # STATIC / ROOT
 # =========================================================================
 @app.get("/healthz")
@@ -126,14 +158,17 @@ def favicon():
 
 
 @app.get("/")
-def root():
-    return FileResponse(INDEX_FILE)
+def root(request: Request):
+    user = auth.get_current_user_optional(request)
+    if user is None:
+        return RedirectResponse(url=f"{settings.base_path}/entrar", status_code=302)
+    return RedirectResponse(url=_home_for_role(user.role), status_code=302)
 
 
 @app.get("/r/{token}")
 def retorno_legado(token: str):
-    # Link dos e-mails/WhatsApp: abre o app já apontando para o resultado (?r=token).
-    return RedirectResponse(url=f"{settings.base_path}/?r={quote(token)}", status_code=302)
+    # Link dos e-mails/WhatsApp: abre direto a página do resultado (requer login).
+    return RedirectResponse(url=f"{settings.base_path}/resultado/{quote(token)}", status_code=302)
 
 
 @app.api_route("/perfil-comportamental", methods=["GET", "POST"])
@@ -152,13 +187,159 @@ def legacy_prefix_redirect(request: Request, rest: str = ""):
     return RedirectResponse(url=target, status_code=308)
 
 
+# =========================================================================
+# AUTH (páginas server-rendered com URL próprio)
+# =========================================================================
+@app.get("/entrar")
+def entrar_page(request: Request, next: str | None = None):
+    user = auth.get_current_user_optional(request)
+    if user is not None:
+        return RedirectResponse(url=_home_for_role(user.role), status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request, "next": _safe_next(next)})
+
+
+@app.post("/entrar")
+def entrar_submit(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("")):
+    email_norm = email.lower().strip()
+    with get_session() as s:
+        user = s.query(User).filter(User.email == email_norm).first()
+        if user is None or user.blocked or not auth.verify_password(password, user.password_hash):
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": "E-mail ou senha inválidos", "email": email, "next": _safe_next(next)},
+                status_code=401,
+            )
+        role, uid = user.role, user.id
+    dest = _safe_next(next) or _home_for_role(role)
+    response = RedirectResponse(url=dest, status_code=302)
+    _set_auth_cookie(response, auth.create_jwt(uid))
+    return response
+
+
+@app.post("/sair")
+def sair():
+    response = RedirectResponse(url=f"{settings.base_path}/entrar", status_code=302)
+    _clear_auth_cookie(response)
+    return response
+
+
+@app.get("/cadastro/{slug}")
+def cadastro_page(slug: str, request: Request):
+    with get_session() as s:
+        company = s.query(Company).filter(Company.slug == slug.lower().strip()).first()
+        if company is None:
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": "Link de convite inválido ou empresa não encontrada."}, status_code=404
+            )
+        company_ctx = {"nome": company.nome, "slug": company.slug}
+    return templates.TemplateResponse("cadastro.html", {"request": request, "company": company_ctx, "form": {}})
+
+
+@app.post("/cadastro/{slug}")
+def cadastro_submit(
+    slug: str,
+    request: Request,
+    nome: str = Form(...),
+    sobrenome: str = Form(""),
+    email: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+):
+    email_norm = email.lower().strip()
+    with get_session() as s:
+        company = s.query(Company).filter(Company.slug == slug.lower().strip()).first()
+        if company is None:
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": "Link de convite inválido."}, status_code=404
+            )
+        company_ctx = {"nome": company.nome, "slug": company.slug}
+        form = {"nome": nome, "sobrenome": sobrenome, "email": email}
+
+        def err(msg):
+            return templates.TemplateResponse(
+                "cadastro.html", {"request": request, "company": company_ctx, "form": form, "error": msg}, status_code=400
+            )
+
+        if password != password2:
+            return err("As senhas não coincidem")
+        if len(password) < 8:
+            return err("A senha precisa ter pelo menos 8 caracteres")
+        if settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip():
+            return err("E-mail já cadastrado")
+        if s.query(User).filter(User.email == email_norm).first() is not None:
+            return err("E-mail já cadastrado. Faça login.")
+        user = User(
+            id=auth.new_user_id(),
+            email=email_norm,
+            password_hash=auth.hash_password(password),
+            nome=nome.strip(),
+            sobrenome=sobrenome.strip(),
+            whatsapp="",
+            role=auth.MEMBER,
+            tenant_id=company.id,
+        )
+        s.add(user)
+        s.commit()
+        uid = user.id
+    response = RedirectResponse(url=f"{settings.base_path}/testes", status_code=302)
+    _set_auth_cookie(response, auth.create_jwt(uid))
+    return response
+
+
+@app.get("/esqueci-senha")
+def esqueci_page(request: Request):
+    return templates.TemplateResponse("esqueci.html", {"request": request})
+
+
+@app.post("/esqueci-senha")
+def esqueci_submit(request: Request, email: str = Form(...)):
+    email_norm = email.lower().strip()
+    with get_session() as s:
+        user = s.query(User).filter(User.email == email_norm).first()
+        if user is not None and not user.blocked:
+            s.query(PasswordResetToken).filter(
+                PasswordResetToken.user_id == user.id, PasswordResetToken.used == False  # noqa: E712
+            ).update({"used": True})
+            token_value = auth.generate_reset_token()
+            s.add(PasswordResetToken(user_id=user.id, token=token_value, expires_at=datetime.utcnow() + timedelta(hours=1)))
+            s.commit()
+            link = f"{settings.public_base_url}/reset?token={quote(token_value)}"
+            try:
+                mailer.send_password_reset(email_norm, user.nome, link)
+            except Exception:
+                log.warning("Falha ao enviar e-mail de reset para %s", email_norm)
+    return templates.TemplateResponse("esqueci.html", {"request": request, "sent": True})
+
+
 @app.get("/reset")
-def reset_page():
-    return FileResponse(INDEX_FILE)
+def reset_page(request: Request, token: str | None = None):
+    return templates.TemplateResponse("reset.html", {"request": request, "token": token})
+
+
+@app.post("/reset")
+def reset_submit(request: Request, token: str = Form(...), password: str = Form(...), password2: str = Form(...)):
+    def err(msg):
+        return templates.TemplateResponse("reset.html", {"request": request, "token": token, "error": msg}, status_code=400)
+
+    if password != password2:
+        return err("As senhas não coincidem")
+    if len(password) < 8:
+        return err("A senha precisa ter pelo menos 8 caracteres")
+    with get_session() as s:
+        record = s.query(PasswordResetToken).filter(PasswordResetToken.token == token).first()
+        if record is None or record.used or record.expires_at < datetime.utcnow():
+            return err("Link inválido ou expirado")
+        user = s.get(User, record.user_id)
+        if user is None or user.blocked:
+            return err("Conta indisponível")
+        user.password_hash = auth.hash_password(password)
+        record.used = True
+        s.commit()
+    return templates.TemplateResponse("reset.html", {"request": request, "token": token, "done": True})
 
 
 # =========================================================================
-# AUTH
+# AUTH API (JSON — legado, mantido para compat)
 # =========================================================================
 class RegisterIn(BaseModel):
     nome: str = Field(..., min_length=1, max_length=120)
@@ -641,6 +822,111 @@ def _sse_escape(text: str) -> str:
 
 
 # =========================================================================
+# PÁGINAS DO FLUXO DE TESTES (server-rendered, com shell)
+# =========================================================================
+@app.get("/testes")
+def testes_page(request: Request):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    nr1 = [t for t in TESTS if t.get("grupo") == "nr1"]
+    comp = [t for t in TESTS if t.get("grupo") == "comportamental"]
+    aviso = user.role == auth.MEMBER and not user.tenant_id
+    return templates.TemplateResponse(
+        "testes.html",
+        {"request": request, "nr1": nr1, "comportamental": comp, "aviso_sem_empresa": aviso, **_shell_ctx(user, "testes")},
+    )
+
+
+@app.get("/testes/{test_id}")
+def teste_detalhe_page(test_id: int, request: Request):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    test = get_test(test_id)
+    if test is None:
+        raise HTTPException(404, "Teste não encontrado")
+    with get_session() as s:
+        leads = (
+            s.query(Lead)
+            .filter(Lead.user_id == user.id, Lead.test_id == test_id, Lead.concluido_em.isnot(None))
+            .order_by(Lead.concluido_em.desc())
+            .all()
+        )
+        history = [{"token": l.token, "concluido_em": l.concluido_em, "area": l.area, "resumo": _history_resumo(l)} for l in leads]
+    company = _user_company_context(user)
+    needs_area = bool(test.get("empresa"))
+    return templates.TemplateResponse(
+        "teste_detalhe.html",
+        {"request": request, "test": test, "history": history, "company": company, "needs_area": needs_area, **_shell_ctx(user, "testes")},
+    )
+
+
+@app.post("/testes/{test_id}/iniciar")
+def teste_iniciar(test_id: int, request: Request, bg: BackgroundTasks, area: str = Form("")):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    test = get_test(test_id)
+    if test is None or not test["ativo"]:
+        raise HTTPException(400, "Teste indisponível")
+    company_id = user.tenant_id
+    area_val = None
+    if is_empresa_test(test_id):
+        if not company_id:
+            return RedirectResponse(url=f"{settings.base_path}/testes/{test_id}", status_code=302)
+        with get_session() as s:
+            area_names = {a.nome for a in s.query(CompanyArea).filter_by(company_id=company_id).all()}
+        if not area or area not in area_names:
+            return RedirectResponse(url=f"{settings.base_path}/testes/{test_id}", status_code=302)
+        area_val = area
+    token = uuid.uuid4().hex
+    with get_session() as s:
+        lead = Lead(
+            token=token, user_id=user.id, test_id=test_id, nome=user.nome, sobrenome=user.sobrenome,
+            whatsapp=user.whatsapp, email=user.email, profissao=user.profissao, origem=user.origem,
+            company_id=company_id, area=area_val,
+        )
+        s.add(lead)
+        s.commit()
+        lead_dict = _lead_to_dict(lead)
+    bg.add_task(sheets.append_lead, lead_dict)
+    return RedirectResponse(url=f"{settings.base_path}/responder/{token}", status_code=302)
+
+
+@app.get("/responder/{token}")
+def responder_page(token: str, request: Request):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    with get_session() as s:
+        lead = s.get(Lead, token)
+        if lead is None or lead.user_id != user.id:
+            raise HTTPException(404, "Teste não encontrado")
+        if lead.concluido_em is not None:
+            return RedirectResponse(url=f"{settings.base_path}/resultado/{token}", status_code=302)
+        test = get_test(lead.test_id) or {}
+        ctx = {"token": token, "test_id": lead.test_id, "test_nome": test.get("nome", ""), "area": lead.area}
+    return templates.TemplateResponse("responder.html", {"request": request, **ctx, **_shell_ctx(user, "testes")})
+
+
+@app.get("/resultado/{token}")
+def resultado_page(token: str, request: Request):
+    user = auth.get_current_user_optional(request)
+    if user is None:
+        nxt = quote(f"{settings.base_path}/resultado/{token}")
+        return RedirectResponse(url=f"{settings.base_path}/entrar?next={nxt}", status_code=302)
+    with get_session() as s:
+        lead = s.get(Lead, token)
+        if lead is None or lead.user_id != user.id:
+            raise HTTPException(404, "Resultado não encontrado")
+        if lead.concluido_em is None:
+            return RedirectResponse(url=f"{settings.base_path}/responder/{token}", status_code=302)
+        test_id = lead.test_id
+    return templates.TemplateResponse("resultado.html", {"request": request, "token": token, "test_id": test_id, **_shell_ctx(user, "testes")})
+
+
+# =========================================================================
 # GESTOR DA EMPRESA (painel do cliente)
 # =========================================================================
 def _copsoq_agg_for(company_id: str, area: str | None) -> dict:
@@ -701,7 +987,8 @@ def _company_members(company_id: str) -> list[dict]:
         return [
             {
                 "id": u.id,
-                "nome": f"{u.nome} {u.sobrenome}".strip(),
+                "nome": u.nome,
+                "sobrenome": u.sobrenome,
                 "email": u.email,
                 "whatsapp": u.whatsapp,
                 "blocked": u.blocked,
@@ -711,12 +998,15 @@ def _company_members(company_id: str) -> list[dict]:
         ]
 
 
-# Guardas de página (redirecionam para a tela única de login, em vez de 401/403).
+# Guardas de página (redirecionam para o login/home, em vez de 401/403).
 def _page_user(request: Request, *roles: str):
     """Retorna (user, None) se logado e com papel permitido, senão (None, redirect)."""
     user = auth.get_current_user_optional(request)
-    if user is None or (roles and user.role not in roles):
-        return None, RedirectResponse(url=f"{settings.base_path}/", status_code=302)
+    if user is None:
+        nxt = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return None, RedirectResponse(url=f"{settings.base_path}/entrar?next={quote(nxt)}", status_code=302)
+    if roles and user.role not in roles:
+        return None, RedirectResponse(url=_home_for_role(user.role), status_code=302)
     return user, None
 
 
@@ -746,21 +1036,47 @@ def empresa_logout():
 
 
 @app.get("/empresa")
-def empresa_dashboard(request: Request, area: str | None = None):
+def empresa_gestao(request: Request):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company_data, impersonating = _manager_tenant(request, user)
+    if not tenant_id:
+        # super admin sem impersonar → escolher uma empresa no painel admin
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    with get_session() as s:
+        company = s.get(Company, tenant_id)
+        company_ctx = {"id": company.id, "nome": company.nome, "slug": company.slug}
+    invite_link = f"{settings.public_base_url}/cadastro/{company_ctx['slug']}"
+    members = _company_members(tenant_id)
+    return templates.TemplateResponse(
+        "empresa_gestao.html",
+        {
+            "request": request,
+            "company": company_ctx,
+            "invite_link": invite_link,
+            "areas": _company_areas_com_contagem(tenant_id),
+            "ativos": [m for m in members if not m["blocked"]],
+            "arquivados": [m for m in members if m["blocked"]],
+            **_shell_ctx(user, "empresa", impersonating=impersonating, role=auth.ADMIN),
+        },
+    )
+
+
+@app.get("/empresa/resultados")
+def empresa_resultados(request: Request, area: str | None = None):
     user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
     if redir:
         return redir
     tenant_id, company_data, impersonating = _manager_tenant(request, user)
     if not tenant_id:
-        # super admin sem impersonar → escolher uma empresa no painel admin
         return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-
     areas = _company_areas_com_contagem(tenant_id)
     total = sum(a["respondentes"] for a in areas)
     scope = area if area else None
     agg = _copsoq_agg_for(tenant_id, scope)
     return templates.TemplateResponse(
-        "empresa_dashboard.html",
+        "empresa_resultados.html",
         {
             "request": request,
             "company": company_data,
@@ -768,10 +1084,88 @@ def empresa_dashboard(request: Request, area: str | None = None):
             "total_respondentes": total,
             "scope": scope,
             "agg": agg,
-            "colaboradores": _company_members(tenant_id),
-            "impersonating": impersonating,
+            **_shell_ctx(user, "resultados", impersonating=impersonating, role=auth.ADMIN),
         },
     )
+
+
+@app.post("/empresa/nome")
+def empresa_rename(request: Request, nome: str = Form(...)):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _c, _i = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    nome = nome.strip()
+    if nome:
+        with get_session() as s:
+            company = s.get(Company, tenant_id)
+            if company is not None:
+                company.nome = nome
+                s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+@app.post("/empresa/areas/{area_id}/rename")
+def empresa_rename_area(area_id: int, request: Request, nome: str = Form(...)):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _c, _i = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    novo = nome.strip()
+    with get_session() as s:
+        area = s.get(CompanyArea, area_id)
+        if area is not None and area.company_id == tenant_id and novo and novo != area.nome:
+            dup = s.query(CompanyArea).filter_by(company_id=tenant_id, nome=novo).first()
+            if dup is None:
+                antigo = area.nome
+                area.nome = novo
+                # Cascata: mantém o histórico ligado ao novo nome (Lead.area é string).
+                s.query(Lead).filter(Lead.company_id == tenant_id, Lead.area == antigo).update({Lead.area: novo})
+                s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+@app.post("/empresa/colaboradores/{user_id}/edit")
+def empresa_edit_colaborador(user_id: str, request: Request, nome: str = Form(...), sobrenome: str = Form(""), email: str = Form(...)):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _c, _i = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    email_norm = email.lower().strip()
+    with get_session() as s:
+        target = s.get(User, user_id)
+        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
+            reserved = settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip()
+            clash = s.query(User).filter(User.email == email_norm, User.id != target.id).first()
+            if clash is None and not reserved:
+                target.nome = nome.strip()
+                target.sobrenome = sobrenome.strip()
+                target.email = email_norm
+                s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+@app.post("/empresa/colaboradores/{user_id}/arquivar")
+def empresa_arquivar_colaborador(user_id: str, request: Request):
+    """Arquiva/reativa um colaborador. Arquivar = blocked=True (perde acesso, dados preservados)."""
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _c, _i = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    with get_session() as s:
+        target = s.get(User, user_id)
+        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
+            target.blocked = not target.blocked
+            s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
 
 
 # O gestor de cada empresa gerencia as próprias áreas (não o super admin).
@@ -822,6 +1216,125 @@ def empresa_toggle_block(user_id: str, request: Request):
             target.blocked = not target.blocked
             s.commit()
     return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+
+
+# =========================================================================
+# CONFIGURAÇÕES (conta + administradores)
+# =========================================================================
+def _cfg_redirect(ok: str | None = None, error: str | None = None):
+    q = f"?ok={quote(ok)}" if ok else (f"?error={quote(error)}" if error else "")
+    return RedirectResponse(url=f"{settings.base_path}/configuracoes{q}", status_code=302)
+
+
+@app.get("/configuracoes")
+def configuracoes_page(request: Request, ok: str | None = None, error: str | None = None):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    is_admin = user.role == auth.ADMIN
+    admins = []
+    if is_admin and user.tenant_id:
+        with get_session() as s:
+            rows = (
+                s.query(User)
+                .filter(User.tenant_id == user.tenant_id, User.role == auth.ADMIN)
+                .order_by(User.created_at.asc())
+                .all()
+            )
+            admins = [{"id": a.id, "nome": f"{a.nome} {a.sobrenome}".strip() or a.email, "email": a.email} for a in rows]
+    perfil = {"nome": user.nome, "sobrenome": user.sobrenome, "email": user.email}
+    return templates.TemplateResponse(
+        "configuracoes.html",
+        {"request": request, "perfil": perfil, "is_admin": is_admin, "admins": admins, "me_id": user.id,
+         "ok": ok, "error": error, **_shell_ctx(user, "configuracoes")},
+    )
+
+
+@app.post("/configuracoes/perfil")
+def configuracoes_perfil(request: Request, nome: str = Form(...), sobrenome: str = Form(""), email: str = Form(...)):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    email_norm = email.lower().strip()
+    with get_session() as s:
+        u = s.get(User, user.id)
+        if u is None:
+            return RedirectResponse(url=f"{settings.base_path}/entrar", status_code=302)
+        reserved = settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip()
+        clash = s.query(User).filter(User.email == email_norm, User.id != u.id).first()
+        if clash is not None or (reserved and u.role != auth.SUPER_ADMIN):
+            return _cfg_redirect(error="Esse e-mail já está em uso")
+        u.nome = nome.strip()
+        u.sobrenome = sobrenome.strip()
+        u.email = email_norm
+        s.commit()
+    return _cfg_redirect(ok="Dados atualizados")
+
+
+@app.post("/configuracoes/senha")
+def configuracoes_senha(request: Request, atual: str = Form(...), nova: str = Form(...), nova2: str = Form(...)):
+    user, redir = _page_user(request)
+    if redir:
+        return redir
+    if nova != nova2:
+        return _cfg_redirect(error="As senhas não coincidem")
+    if len(nova) < 8:
+        return _cfg_redirect(error="A senha precisa ter ao menos 8 caracteres")
+    with get_session() as s:
+        u = s.get(User, user.id)
+        if u is None or not auth.verify_password(atual, u.password_hash):
+            return _cfg_redirect(error="Senha atual incorreta")
+        u.password_hash = auth.hash_password(nova)
+        s.commit()
+    return _cfg_redirect(ok="Senha alterada")
+
+
+@app.post("/configuracoes/admins")
+def configuracoes_add_admin(request: Request, nome: str = Form(...), sobrenome: str = Form(""), email: str = Form(...), senha: str = Form(...)):
+    user, redir = _page_user(request, auth.ADMIN)
+    if redir:
+        return redir
+    if not user.tenant_id:
+        return _cfg_redirect(error="Sua conta não está vinculada a uma empresa")
+    email_norm = email.lower().strip()
+    if len(senha) < 8:
+        return _cfg_redirect(error="A senha precisa ter ao menos 8 caracteres")
+    if settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip():
+        return _cfg_redirect(error="Esse e-mail é reservado")
+    with get_session() as s:
+        if s.query(User).filter(User.email == email_norm).first() is not None:
+            return _cfg_redirect(error="Esse e-mail já está em uso")
+        s.add(User(
+            id=auth.new_user_id(), email=email_norm, password_hash=auth.hash_password(senha),
+            nome=nome.strip(), sobrenome=sobrenome.strip(), whatsapp="", role=auth.ADMIN, tenant_id=user.tenant_id,
+        ))
+        s.commit()
+    return _cfg_redirect(ok="Administrador adicionado")
+
+
+@app.post("/configuracoes/admins/{admin_id}/delete")
+def configuracoes_del_admin(admin_id: str, request: Request):
+    user, redir = _page_user(request, auth.ADMIN)
+    if redir:
+        return redir
+    if admin_id == user.id:
+        return _cfg_redirect(error="Você não pode remover a si mesmo")
+    with get_session() as s:
+        target = s.get(User, admin_id)
+        if target is not None and target.tenant_id == user.tenant_id and target.role == auth.ADMIN:
+            count = s.query(User).filter(User.tenant_id == user.tenant_id, User.role == auth.ADMIN).count()
+            if count > 1:
+                try:
+                    s.delete(target)
+                    s.commit()
+                except Exception:
+                    # Admin com registros vinculados (ex.: leads) → apenas revoga o acesso.
+                    s.rollback()
+                    again = s.get(User, admin_id)
+                    if again is not None:
+                        again.blocked = True
+                        s.commit()
+    return _cfg_redirect(ok="Administrador removido")
 
 
 # =========================================================================
@@ -876,6 +1389,20 @@ def admin_dashboard(request: Request):
     if redir:
         return redir
     with get_session() as s:
+        empresas = s.query(Company).order_by(Company.created_at.desc()).all()
+        empresas_rows = [{"id": c.id, "nome": c.nome, "slug": c.slug} for c in empresas]
+    return templates.TemplateResponse(
+        "admin_dashboard.html",
+        {"request": request, "empresas": empresas_rows, **_shell_ctx(user, "empresas")},
+    )
+
+
+@app.get("/admin/usuarios")
+def admin_usuarios(request: Request):
+    user, redir = _page_user(request, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    with get_session() as s:
         users = s.query(User).order_by(User.created_at.desc()).all()
         counts = dict(
             s.query(Lead.user_id, func.count(Lead.token))
@@ -890,8 +1417,6 @@ def admin_dashboard(request: Request):
                 "nome": f"{u.nome} {u.sobrenome}".strip(),
                 "email": u.email,
                 "whatsapp": u.whatsapp,
-                "profissao": u.profissao,
-                "origem": u.origem,
                 "role": u.role,
                 "empresa": tenant_nomes.get(u.tenant_id) if u.tenant_id else None,
                 "created_at": u.created_at,
@@ -899,17 +1424,15 @@ def admin_dashboard(request: Request):
             }
             for u in users
         ]
-        empresas = s.query(Company).order_by(Company.created_at.desc()).all()
-        empresas_rows = [{"id": c.id, "nome": c.nome, "slug": c.slug} for c in empresas]
     return templates.TemplateResponse(
-        "admin_dashboard.html",
-        {"request": request, "users": rows, "empresas": empresas_rows},
+        "admin_usuarios.html",
+        {"request": request, "users": rows, **_shell_ctx(user, "usuarios")},
     )
 
 
 @app.get("/admin/users/{user_id}")
 def admin_user_detail(user_id: str, request: Request):
-    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    admin_user, redir = _page_user(request, auth.SUPER_ADMIN)
     if redir:
         return redir
     with get_session() as s:
@@ -937,13 +1460,13 @@ def admin_user_detail(user_id: str, request: Request):
         ]
     return templates.TemplateResponse(
         "admin_user.html",
-        {"request": request, "user": user_data, "results": results},
+        {"request": request, "user": user_data, "results": results, **_shell_ctx(admin_user, "usuarios")},
     )
 
 
 @app.get("/admin/results/{token}")
 def admin_result_detail(token: str, request: Request):
-    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    admin_user, redir = _page_user(request, auth.SUPER_ADMIN)
     if redir:
         return redir
     with get_session() as s:
@@ -976,7 +1499,7 @@ def admin_result_detail(token: str, request: Request):
         }
     return templates.TemplateResponse(
         "admin_result.html",
-        {"request": request, "lead": data, "messages": messages},
+        {"request": request, "lead": data, "messages": messages, **_shell_ctx(admin_user, "usuarios")},
     )
 
 
@@ -1042,7 +1565,7 @@ def admin_create_empresa(
 
 @app.get("/admin/empresas/{company_id}")
 def admin_empresa_detail(company_id: str, request: Request):
-    _user, redir = _page_user(request, auth.SUPER_ADMIN)
+    admin_user, redir = _page_user(request, auth.SUPER_ADMIN)
     if redir:
         return redir
     with get_session() as s:
@@ -1057,7 +1580,7 @@ def admin_empresa_detail(company_id: str, request: Request):
         }
     areas = _company_areas_com_contagem(company_id)
     total = sum(a["respondentes"] for a in areas)
-    link = f"{settings.public_base_url}/?empresa={company_data['slug']}"
+    link = f"{settings.public_base_url}/cadastro/{company_data['slug']}"
     return templates.TemplateResponse(
         "admin_empresa.html",
         {
@@ -1066,6 +1589,7 @@ def admin_empresa_detail(company_id: str, request: Request):
             "areas": areas,
             "total_respondentes": total,
             "link": link,
+            **_shell_ctx(admin_user, "empresas"),
         },
     )
 

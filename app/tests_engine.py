@@ -90,6 +90,10 @@ class CopsoqEngine(TestEngine):
 # ---------------------------------------------------------------------------
 # Catálogo
 # ---------------------------------------------------------------------------
+# Grupos exibidos na página "Seus testes":
+#   - "nr1": testes ligados à NR-1 / riscos psicossociais (COPSOQ II).
+#   - "comportamental": bateria comportamental — bloqueada por ora (inclusive o
+#     "Perfil Comportamental", que fica com ativo=False até a bateria ser liberada).
 TESTS: list[dict] = [
     {
         "id": COPSOQ_TEST_ID,
@@ -99,17 +103,18 @@ TESTS: list[dict] = [
         "ativo": True,
         "kind": "likert",
         "empresa": True,
+        "grupo": "nr1",
     },
-    {"id": 1, "nome": "Perfil Comportamental", "descricao": "Descubra seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato.", "icon": "star", "ativo": True, "kind": "choice", "empresa": False},
-    {"id": 2, "nome": "Perfil de Liderança", "descricao": "Os quatro estilos de liderança na organização.", "icon": "crown", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 3, "nome": "Sabotadores Comportamentais", "descricao": "Os dez comportamentos tóxicos do profissional.", "icon": "warning", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 4, "nome": "Inteligência Emocional", "descricao": "Os 15 indicadores de relacionamentos interpessoais inteligentes.", "icon": "heart", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 5, "nome": "Trabalho em Equipe", "descricao": "As 5 áreas de contribuição do profissional para o time.", "icon": "users", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 6, "nome": "Fit Cultural", "descricao": "Avaliação do perfil do candidato com a vaga e a cultura da empresa.", "icon": "puzzle", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 7, "nome": "Valores", "descricao": "Os cinco principais valores que norteiam o indivíduo.", "icon": "compass", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 8, "nome": "Personalidade", "descricao": "Baseado no framework das 16 personalidades.", "icon": "sparkles", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 9, "nome": "Tríade do Tempo", "descricao": "Gestão do tempo e produtividade.", "icon": "clock", "ativo": False, "kind": "choice", "empresa": False},
-    {"id": 10, "nome": "Avaliação do Líder", "descricao": "As 8 áreas de relacionamento do gestor com o time.", "icon": "briefcase", "ativo": False, "kind": "choice", "empresa": False},
+    {"id": 1, "nome": "Perfil Comportamental", "descricao": "Descubra seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato.", "icon": "star", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 2, "nome": "Perfil de Liderança", "descricao": "Os quatro estilos de liderança na organização.", "icon": "crown", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 3, "nome": "Sabotadores Comportamentais", "descricao": "Os dez comportamentos tóxicos do profissional.", "icon": "warning", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 4, "nome": "Inteligência Emocional", "descricao": "Os 15 indicadores de relacionamentos interpessoais inteligentes.", "icon": "heart", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 5, "nome": "Trabalho em Equipe", "descricao": "As 5 áreas de contribuição do profissional para o time.", "icon": "users", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 6, "nome": "Fit Cultural", "descricao": "Avaliação do perfil do candidato com a vaga e a cultura da empresa.", "icon": "puzzle", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 7, "nome": "Valores", "descricao": "Os cinco principais valores que norteiam o indivíduo.", "icon": "compass", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 8, "nome": "Personalidade", "descricao": "Baseado no framework das 16 personalidades.", "icon": "sparkles", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 9, "nome": "Tríade do Tempo", "descricao": "Gestão do tempo e produtividade.", "icon": "clock", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
+    {"id": 10, "nome": "Avaliação do Líder", "descricao": "As 8 áreas de relacionamento do gestor com o time.", "icon": "briefcase", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
 ]
 
 _ENGINES: dict[int, TestEngine] = {

@@ -1,0 +1,92 @@
+{% extends "_shell.html" %}
+{% block title %}Configurações — Strategic AI{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-2xl space-y-6">
+  <h1 class="text-2xl font-bold text-slate-900">Configurações</h1>
+
+  {% if ok %}<div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>{% endif %}
+
+  <!-- Meus dados -->
+  <div class="card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-3">Meus dados</h2>
+    <form method="POST" action="{{ base_path }}/configuracoes/perfil" class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="label">Nome</label>
+          <input name="nome" required value="{{ perfil.nome }}" class="input">
+        </div>
+        <div>
+          <label class="label">Sobrenome</label>
+          <input name="sobrenome" value="{{ perfil.sobrenome }}" class="input">
+        </div>
+      </div>
+      <div>
+        <label class="label">E-mail</label>
+        <input name="email" type="email" required value="{{ perfil.email }}" class="input">
+      </div>
+      <div class="flex justify-end"><button class="btn-primary px-5">Salvar</button></div>
+    </form>
+  </div>
+
+  <!-- Trocar senha -->
+  <div class="card p-5" x-data>
+    <h2 class="text-sm font-semibold text-slate-700 mb-3">Trocar senha</h2>
+    <form method="POST" action="{{ base_path }}/configuracoes/senha" class="space-y-4">
+      <div>
+        <label class="label">Senha atual</label>
+        <input name="atual" type="password" required class="input">
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="label">Nova senha</label>
+          <input name="nova" type="password" required minlength="8" class="input">
+        </div>
+        <div>
+          <label class="label">Confirmar nova senha</label>
+          <input name="nova2" type="password" required minlength="8" class="input">
+        </div>
+      </div>
+      <div class="flex justify-end"><button class="btn-primary px-5">Trocar senha</button></div>
+    </form>
+  </div>
+
+  <!-- Administradores (só gestor) -->
+  {% if is_admin %}
+  <div class="card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-1">Administradores</h2>
+    <p class="text-xs text-slate-500 mb-3">Outros gestores com acesso ao painel desta empresa.</p>
+
+    {% if admins %}
+    <ul class="divide-y divide-slate-100 mb-4">
+      {% for a in admins %}
+      <li class="flex items-center justify-between py-2 text-sm">
+        <span class="text-slate-800">{{ a.nome }} <span class="text-slate-400">· {{ a.email }}</span></span>
+        {% if a.id != me_id %}
+        <form method="POST" action="{{ base_path }}/configuracoes/admins/{{ a.id }}/delete" onsubmit="return confirm('Remover este administrador?');">
+          <button class="text-xs text-red-600 hover:text-red-800">Remover</button>
+        </form>
+        {% else %}
+        <span class="text-xs text-slate-400">você</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="rounded-lg border border-slate-200 p-4">
+      <h3 class="text-sm font-medium text-slate-700 mb-3">Adicionar administrador</h3>
+      <form method="POST" action="{{ base_path }}/configuracoes/admins" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input name="nome" required placeholder="Nome" class="input">
+          <input name="sobrenome" placeholder="Sobrenome" class="input">
+        </div>
+        <input name="email" type="email" required placeholder="E-mail" class="input">
+        <input name="senha" type="password" required minlength="8" placeholder="Senha (mínimo 8 caracteres)" class="input">
+        <div class="flex justify-end"><button class="btn-primary px-5">Adicionar</button></div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
