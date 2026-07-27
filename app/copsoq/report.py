@@ -80,6 +80,14 @@ def build_report(agg: dict) -> list[dict]:
             "nivel": nivel_bloco,
             "nivel_label": NIVEL_LABEL.get(nivel_bloco, "—"),
             "indicadores": indicadores,
+            # Mesma lista, do mais grave para o menos grave — usada nos chips da tela.
+            "indicadores_por_risco": sorted(
+                indicadores,
+                key=lambda ind: (
+                    ind["risco_score"] is None,
+                    -(ind["risco_score"] or 0),
+                ),
+            ),
         })
 
     return blocos

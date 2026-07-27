@@ -87,6 +87,7 @@
 
   {% else %}
   <!-- =========================== ABA RELATÓRIO =========================== -->
+  {% if not relatorio_liberado or not secoes or secoes[0].resumo.respondentes < min_respondentes %}
   <div class="card p-6">
     {% if not relatorio_liberado %}
       <div class="py-10 text-center">
@@ -102,17 +103,20 @@
         </p>
       </div>
 
-    {% elif not secoes or secoes[0].resumo.respondentes < min_respondentes %}
+    {% else %}
       <p class="text-center text-slate-500 py-10">
         Ainda não há respostas suficientes para gerar o relatório
         (mínimo de {{ min_respondentes }} respondentes).
       </p>
+    {% endif %}
+  </div>
 
-    {% else %}
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-200">
+  {% else %}
+    <div class="card p-6 mb-8">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-lg font-semibold text-slate-900">Relatório de análise</h2>
-          <p class="text-sm text-slate-500">Consolidado geral e por área, com base no COPSOQ II.</p>
+          <h2 class="text-xl font-bold text-slate-900">Relatório de análise</h2>
+          <p class="text-sm text-slate-500 mt-0.5">Consolidado geral e por área, com base no COPSOQ II.</p>
         </div>
         {% if pdf_disponivel %}
         <a href="{{ base_path }}/empresa/relatorio.pdf" class="btn-primary">
@@ -122,10 +126,10 @@
         <span class="text-xs text-slate-400">Download em PDF indisponível neste ambiente.</span>
         {% endif %}
       </div>
+    </div>
 
-      {% include "_report_body.html" %}
-    {% endif %}
-  </div>
+    {% include "_report_body.html" %}
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}

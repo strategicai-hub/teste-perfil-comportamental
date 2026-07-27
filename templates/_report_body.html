@@ -1,53 +1,66 @@
 {# Corpo do relatório NR-1. Usado pela tela (aba Relatório) e pelo PDF.
    Espera `secoes` — cada uma com titulo, resumo, gargalos e blocos.
-   Sem devolutiva de bloco: o cabeçalho vai direto para os indicadores. #}
+   Cada bloco é um card: cabeçalho numerado + chips de escore + leitura de cada indicador. #}
 {% for secao in secoes %}
 <section class="report-section">
   <h2 class="report-section-title">{{ secao.titulo }}</h2>
 
-  <div class="report-summary">
-    <span><strong>{{ secao.resumo.respondentes }}</strong> respondente(s)</span>
-    <span class="report-pill" style="color:{{ nivel_cor.verde }}; border-color:{{ nivel_cor.verde }}55;">
-      {{ secao.resumo.favoravel }} favorável(is)
-    </span>
-    <span class="report-pill" style="color:{{ nivel_cor.amarelo }}; border-color:{{ nivel_cor.amarelo }}55;">
-      {{ secao.resumo.atencao }} em atenção
-    </span>
-    <span class="report-pill" style="color:{{ nivel_cor.vermelho }}; border-color:{{ nivel_cor.vermelho }}55;">
-      {{ secao.resumo.risco_alto }} em risco alto
-    </span>
-  </div>
+  <div class="report-section-head">
+    <div class="report-summary">
+      <span><strong>{{ secao.resumo.respondentes }}</strong> respondente(s)</span>
+      <span class="report-pill" style="color:{{ nivel_cor.verde }}; border-color:{{ nivel_cor.verde }}55; background:{{ nivel_cor.verde }}12;">
+        {{ secao.resumo.favoravel }} favorável(is)
+      </span>
+      <span class="report-pill" style="color:{{ nivel_cor.amarelo }}; border-color:{{ nivel_cor.amarelo }}55; background:{{ nivel_cor.amarelo }}12;">
+        {{ secao.resumo.atencao }} em atenção
+      </span>
+      <span class="report-pill" style="color:{{ nivel_cor.vermelho }}; border-color:{{ nivel_cor.vermelho }}55; background:{{ nivel_cor.vermelho }}12;">
+        {{ secao.resumo.risco_alto }} em risco alto
+      </span>
+    </div>
 
-  {% if secao.gargalos %}
-  <div class="report-gargalos">
-    <div class="report-gargalos-title">Principais pontos de atenção</div>
-    <ol>
-      {% for g in secao.gargalos %}
-      <li><strong>{{ g.nome }}</strong> — {{ g.escore }} ({{ g.nivel_label }})</li>
-      {% endfor %}
-    </ol>
+    {% if secao.gargalos %}
+    <div class="report-gargalos">
+      <div class="report-gargalos-title">Principais pontos de atenção</div>
+      <ol>
+        {% for g in secao.gargalos %}
+        <li><strong>{{ g.nome }}</strong> — {{ g.escore }} ({{ g.nivel_label }})</li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
 
   {% for bloco in secao.blocos %}
-  <div class="report-bloco">
-    <div class="report-bloco-head" style="border-left-color: {{ nivel_cor.get(bloco.nivel, '#94a3b8') }};">
-      <h3>{{ bloco.numero }}. {{ bloco.nome }}</h3>
+  {% set cor_bloco = nivel_cor.get(bloco.nivel, '#94a3b8') %}
+  <div class="report-bloco" style="--nivel: {{ cor_bloco }}; border-top-color: {{ cor_bloco }};">
+    <div class="report-bloco-head" style="border-left-color: {{ cor_bloco }};">
+      <h3><span class="report-bloco-num">{{ bloco.numero }}</span>{{ bloco.nome }}</h3>
       <span class="report-badge"
             style="color: {{ nivel_cor.get(bloco.nivel, '#64748b') }}; background: {{ nivel_cor.get(bloco.nivel, '#64748b') }}1f;">
         {{ bloco.nivel_label }}
       </span>
     </div>
 
+    <div class="report-chips">
+      {% for ind in (bloco.indicadores_por_risco or bloco.indicadores) %}
+      {% set cor_ind = nivel_cor.get(ind.nivel, '#64748b') %}
+      <span class="report-chip" style="color: {{ cor_ind }}; border-color: {{ cor_ind }}55; background: {{ cor_ind }}12;">
+        {{ ind.nome }}: <strong>{{ ind.escore }}</strong>
+      </span>
+      {% endfor %}
+    </div>
+
     {% for ind in bloco.indicadores %}
-    <div class="report-indicador">
+    {% set cor_ind = nivel_cor.get(ind.nivel, '#334155') %}
+    <div class="report-indicador" style="--nivel-ind: {{ cor_ind }};">
       <div class="report-indicador-nome">
-        {{ ind.nome }}: <strong style="color: {{ nivel_cor.get(ind.nivel, '#334155') }}">{{ ind.escore }}</strong>
+        {{ ind.nome }}: <strong style="color: {{ cor_ind }}">{{ ind.escore }}</strong>
       </div>
       <p class="report-definicao">{{ ind.definicao }}</p>
       <div class="report-status-label">STATUS</div>
-      <p class="report-status">
-        <strong style="color: {{ nivel_cor.get(ind.nivel, '#334155') }}">{{ ind.status_label }}:</strong>
+      <p class="report-status" style="border-left-color: {{ cor_ind }};">
+        <strong style="color: {{ cor_ind }}">{{ ind.status_label }}:</strong>
         {{ ind.texto }}
       </p>
     </div>
