@@ -138,6 +138,84 @@ def send_result_email(to: str, nome: str, result: dict, token: str) -> None:
         log.error("Falha ao enviar e-mail: %s", exc)
 
 
+def _invite_html(nome: str, empresa: str, prazo: str, link: str) -> str:
+    return f"""\
+<!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="utf-8"><title>Teste da NR-1</title></head>
+<body style="font-family: Arial, Helvetica, sans-serif; background:#f5f7fa; margin:0; padding:24px;">
+  <div style="max-width:560px; margin:0 auto; background:#ffffff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <h1 style="color:#0f766e; margin:0 0 16px 0; font-size:22px;">Olá, {nome}.</h1>
+
+    <p style="color:#334155; line-height:1.6; margin:0 0 16px 0;">
+      A <strong>{empresa}</strong> está fazendo a avaliação de saúde e bem-estar no trabalho
+      exigida pela <strong>NR-1</strong>. Sua participação é importante.
+    </p>
+
+    <p style="color:#334155; line-height:1.6; margin:0 0 16px 0;">
+      São perguntas rápidas e leva cerca de <strong>15 minutos</strong>.
+    </p>
+
+    <p style="color:#334155; line-height:1.6; margin:0 0 16px 0;">
+      Suas respostas são confidenciais: a empresa vê apenas o resultado do grupo,
+      nunca as respostas de uma pessoa.
+    </p>
+
+    <div style="background:#f0fdfa; border-left:4px solid #0f766e; padding:12px 16px; margin:0 0 24px 0;">
+      <p style="color:#0f766e; margin:0; font-weight:700;">Você pode responder até {prazo}.</p>
+    </div>
+
+    <p style="text-align:center; margin:0 0 24px 0;">
+      <a href="{link}" style="display:inline-block; background:#0f766e; color:#fff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:700;">
+        Responder o teste agora
+      </a>
+    </p>
+
+    <p style="color:#64748b; font-size:13px; line-height:1.6; margin:0;">
+      Se o botão não funcionar, copie e cole este endereço no seu navegador:<br>
+      <a href="{link}" style="color:#0f766e; word-break:break-all;">{link}</a>
+    </p>
+
+    <p style="color:#94a3b8; font-size:12px; margin-top:28px;">Strategic AI — Riscos Psicossociais (NR-1)</p>
+  </div>
+</body>
+</html>"""
+
+
+def send_invite_email(to: str, nome: str, empresa: str, prazo: str, link: str) -> None:
+    """Convite do teste da NR-1 para um colaborador. Levanta em caso de falha.
+
+    O chamador registra o erro em `CampaignInvite.erro_envio` para o gestor poder
+    reenviar só para quem não recebeu.
+    """
+    if not settings.smtp_host or not settings.smtp_user:
+        raise RuntimeError("SMTP não configurado")
+
+    primeiro_nome = (nome or "").split()[0] if nome else ""
+
+    msg = EmailMessage()
+    msg["Subject"] = f"{primeiro_nome}, aqui está seu link para responder o teste da NR-1"
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = to
+    msg.set_content(
+        f"Olá, {primeiro_nome}.\n\n"
+        f"A {empresa} está fazendo a avaliação de saúde e bem-estar no trabalho "
+        f"exigida pela NR-1. Sua participação é importante.\n\n"
+        f"São perguntas rápidas e leva cerca de 15 minutos.\n"
+        f"Suas respostas são confidenciais: a empresa vê apenas o resultado do grupo, "
+        f"nunca as respostas de uma pessoa.\n\n"
+        f"Você pode responder até {prazo}.\n\n"
+        f"Responda aqui: {link}\n\n"
+        f"Strategic AI — Riscos Psicossociais (NR-1)"
+    )
+    msg.add_alternative(_invite_html(primeiro_nome, empresa, prazo, link), subtype="html")
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        smtp.starttls()
+        smtp.login(settings.smtp_user, settings.smtp_pass)
+        smtp.send_message(msg)
+
+
 def _reset_html(nome: str, link: str) -> str:
     return f"""\
 <!DOCTYPE html>

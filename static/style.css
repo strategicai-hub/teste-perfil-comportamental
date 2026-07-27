@@ -61,3 +61,89 @@ html { scroll-behavior: smooth; }
   transition: background-color 0.15s;
 }
 .btn-secondary:hover { background: #e2e8f0; }
+
+/* =====================================================================
+   Relatório NR-1 — usado na aba Relatório e no PDF (mesmo markup).
+   ===================================================================== */
+.report-section { margin-bottom: 2.5rem; }
+.report-section + .report-section { padding-top: 2rem; border-top: 2px solid #e2e8f0; }
+
+.report-section-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0e7c72;
+  margin: 0 0 0.75rem 0;
+}
+
+.report-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: #475569;
+  margin-bottom: 1rem;
+}
+.report-pill {
+  display: inline-block;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.report-gargalos {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+}
+.report-gargalos-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 0.375rem;
+}
+.report-gargalos ol { margin: 0; padding-left: 1.25rem; font-size: 0.8125rem; color: #334155; }
+.report-gargalos li { margin-bottom: 0.125rem; }
+
+.report-bloco { margin-bottom: 1.75rem; }
+.report-bloco-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-left: 4px solid #94a3b8;
+  padding: 0.25rem 0 0.25rem 0.75rem;
+  margin-bottom: 0.875rem;
+}
+.report-bloco-head h3 { margin: 0; font-size: 1rem; font-weight: 700; color: #0f172a; }
+.report-badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.report-indicador {
+  padding: 0 0 0.875rem 0.75rem;
+  margin-bottom: 0.875rem;
+  border-bottom: 1px solid #f1f5f9;
+  page-break-inside: avoid;
+}
+.report-indicador:last-child { border-bottom: 0; margin-bottom: 0; }
+.report-indicador-nome { font-size: 0.9375rem; font-weight: 600; color: #0f172a; margin-bottom: 0.25rem; }
+.report-definicao { font-size: 0.8125rem; line-height: 1.55; color: #475569; margin: 0 0 0.5rem 0; }
+.report-status-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  margin-bottom: 0.125rem;
+}
+.report-status { font-size: 0.8125rem; line-height: 1.55; color: #334155; margin: 0; }

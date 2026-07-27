@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Relatório NR-1 — {{ company.nome }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm 16mm;
+    @bottom-center {
+      content: "SAI · Análise do Teste Psicossocial (COPSOQ II / NR-1) — " counter(page) "/" counter(pages);
+      font-size: 8pt; color: #94a3b8;
+    }
+    @bottom-right { content: "Confidencial"; font-size: 8pt; color: #cbd5e1; }
+  }
+  @page :first { margin: 0; }
+
+  body {
+    font-family: "DejaVu Sans", Arial, Helvetica, sans-serif;
+    color: #334155;
+    font-size: 10pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* --- Capa (mesma identidade da pág. 1 do modelo) --- */
+  .capa {
+    background: linear-gradient(160deg, #0b4f4a 0%, #0e7c72 60%, #17a89a 100%);
+    color: #ffffff;
+    height: 297mm;
+    padding: 60mm 20mm 20mm 20mm;
+    box-sizing: border-box;
+    page-break-after: always;
+  }
+  .capa .eyebrow { font-size: 9pt; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.85; }
+  .capa h1 { font-size: 30pt; line-height: 1.15; margin: 8mm 0 0 0; font-weight: 800; }
+  .capa .rule { width: 22mm; height: 3px; background: #ffd166; margin: 7mm 0; }
+  .capa p { font-size: 11pt; opacity: 0.92; max-width: 120mm; }
+  .capa .tags { margin-top: 10mm; }
+  .capa .tag {
+    display: inline-block; border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.12); border-radius: 999px;
+    padding: 2mm 5mm; font-size: 9pt; font-weight: 700; margin: 0 2mm 2mm 0;
+  }
+  .capa .rodape {
+    position: absolute; bottom: 22mm; left: 20mm; right: 20mm;
+    border-top: 1px solid rgba(255,255,255,0.25); padding-top: 4mm; font-size: 8.5pt; opacity: 0.85;
+  }
+
+  /* --- Corpo do relatório (espelha static/style.css) --- */
+  .report-section { margin-bottom: 10mm; }
+  .report-section + .report-section { page-break-before: always; padding-top: 0; border-top: 0; }
+  .report-section-title { font-size: 15pt; font-weight: 800; color: #0e7c72; margin: 0 0 4mm 0; }
+
+  .report-summary { font-size: 9pt; color: #475569; margin-bottom: 4mm; }
+  .report-pill {
+    display: inline-block; padding: 0.5mm 3mm; border: 1px solid; border-radius: 999px;
+    font-weight: 700; font-size: 8pt; margin-left: 2mm;
+  }
+
+  .report-gargalos {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3mm;
+    padding: 3mm 5mm; margin-bottom: 6mm;
+  }
+  .report-gargalos-title {
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #64748b; margin-bottom: 1.5mm;
+  }
+  .report-gargalos ol { margin: 0; padding-left: 5mm; font-size: 9pt; color: #334155; }
+
+  .report-bloco { margin-bottom: 7mm; page-break-inside: avoid; }
+  .report-bloco-head {
+    border-left: 3px solid #94a3b8; padding: 0 0 0 3mm; margin-bottom: 3mm;
+  }
+  .report-bloco-head h3 { margin: 0; font-size: 11.5pt; font-weight: 700; color: #0f172a; display: inline-block; }
+  .report-badge {
+    font-size: 8pt; font-weight: 700; padding: 0.5mm 3mm; border-radius: 999px; margin-left: 3mm;
+  }
+
+  .report-indicador {
+    padding: 0 0 3mm 3mm; margin-bottom: 3mm;
+    border-bottom: 0.4pt solid #f1f5f9; page-break-inside: avoid;
+  }
+  .report-indicador:last-child { border-bottom: 0; }
+  .report-indicador-nome { font-size: 10.5pt; font-weight: 700; color: #0f172a; margin-bottom: 1mm; }
+  .report-definicao { font-size: 9pt; line-height: 1.5; color: #475569; margin: 0 0 2mm 0; }
+  .report-status-label {
+    font-size: 7pt; font-weight: 700; letter-spacing: 0.08em; color: #94a3b8; margin-bottom: 0.5mm;
+  }
+  .report-status { font-size: 9pt; line-height: 1.5; color: #334155; margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="capa">
+  <div class="eyebrow">SAI · Solução NR-1 · Relatório de análise</div>
+  <h1>Análise do Teste<br>Psicossocial — COPSOQ II</h1>
+  <div class="rule"></div>
+  <p>
+    Consolidado geral da empresa e por área, com a leitura de cada indicador na
+    sequência dos 8 blocos avaliados.
+  </p>
+  <div class="tags">
+    <span class="tag">{{ company.nome }}</span>
+    {% if secoes %}<span class="tag">n = {{ secoes[0].resumo.respondentes }} respondentes</span>{% endif %}
+    {% if campanha %}<span class="tag">Teste encerrado em {{ campanha.fim }}</span>{% endif %}
+    <span class="tag">Emitido em {{ gerado_em }}</span>
+  </div>
+  <div class="rodape">
+    <strong>Documento confidencial — uso interno.</strong><br>
+    Instrumento COPSOQ II (Kristensen, 2005; adaptação portuguesa de Silva et al., 2011).
+    Referências normativas: NR-1 (GRO/PGR) e ISO 45003:2021.
+  </div>
+</div>
+
+{% include "_report_body.html" %}
+
+</body>
+</html>

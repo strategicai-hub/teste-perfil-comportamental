@@ -1,25 +1,58 @@
 {% extends "_shell.html" %}
 {% block title %}Resultados — {{ company.nome }}{% endblock %}
+
+{% block head_extra %}
+{% if aba == 'grafico' and campanha and campanha.aberta %}
+{# Enquanto o teste está aberto, o painel se atualiza sozinho conforme as respostas chegam. #}
+<meta http-equiv="refresh" content="60">
+{% endif %}
+{% endblock %}
+
 {% block content %}
-{% set nivel_cor = {'verde': '#16a34a', 'amarelo': '#f59e0b', 'vermelho': '#dc2626'} %}
-{% set nivel_txt = {'verde': 'Favorável', 'amarelo': 'Atenção', 'vermelho': 'Risco alto'} %}
+{% set url_base = base_path ~ '/empresa/resultados' %}
+{% set scope_qs = '&area=' ~ (scope | urlencode) if scope else '' %}
+
 <div class="mx-auto max-w-5xl">
   <h1 class="text-2xl font-bold text-slate-900 mb-1">Resultados</h1>
-  <p class="text-sm text-slate-600 mb-6">{{ total_respondentes }} respondente(s) no total.</p>
+  <p class="text-sm text-slate-600 mb-1">COPSOQ II — Riscos Psicossociais (NR-1)</p>
 
-  <!-- Abas por teste -->
-  <div class="flex flex-wrap gap-2 mb-6 border-b border-slate-200">
-    <span class="px-4 py-2 text-sm font-semibold text-teal-700 border-b-2 border-teal-700 -mb-px">COPSOQ II — Riscos Psicossociais</span>
+  {% if campanha %}
+    {% if campanha.aberta %}
+    <p class="text-sm text-slate-600 mb-6">
+      Teste em andamento até <strong>{{ campanha.fim }}</strong> —
+      {{ campanha.responderam }} de {{ campanha.total }} colaboradores já responderam.
+    </p>
+    {% else %}
+    <p class="text-sm text-slate-600 mb-6">
+      Teste encerrado em <strong>{{ campanha.fim }}</strong> —
+      {{ campanha.responderam }} de {{ campanha.total }} colaboradores responderam.
+    </p>
+    {% endif %}
+  {% else %}
+  <p class="text-sm text-slate-600 mb-6">{{ total_respondentes }} respondente(s) no total.</p>
+  {% endif %}
+
+  <!-- Abas -->
+  <div class="flex flex-wrap gap-1 mb-6 border-b border-slate-200">
+    <a href="{{ url_base }}?aba=grafico{{ scope_qs }}"
+       class="px-4 py-2 text-sm font-semibold -mb-px border-b-2 {{ 'text-teal-700 border-teal-700' if aba == 'grafico' else 'text-slate-500 border-transparent hover:text-slate-700' }}">
+      Gráfico
+    </a>
+    <a href="{{ url_base }}?aba=relatorio{{ scope_qs }}"
+       class="px-4 py-2 text-sm font-semibold -mb-px border-b-2 {{ 'text-teal-700 border-teal-700' if aba == 'relatorio' else 'text-slate-500 border-transparent hover:text-slate-700' }}">
+      Relatório
+    </a>
   </div>
 
-  <!-- Seletor de escopo -->
+  {% if aba == 'grafico' %}
+  <!-- ============================ ABA GRÁFICO ============================ -->
   <div class="flex flex-wrap gap-2 mb-6">
-    <a href="{{ base_path }}/empresa/resultados"
+    <a href="{{ url_base }}?aba=grafico"
        class="rounded-full px-4 py-1.5 text-sm font-medium {{ 'bg-teal-700 text-white' if not scope else 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400' }}">
       Geral ({{ total_respondentes }})
     </a>
     {% for a in areas %}
-    <a href="{{ base_path }}/empresa/resultados?area={{ a.nome | urlencode }}"
+    <a href="{{ url_base }}?aba=grafico&area={{ a.nome | urlencode }}"
        class="rounded-full px-4 py-1.5 text-sm font-medium {{ 'bg-teal-700 text-white' if scope == a.nome else 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400' }}">
       {{ a.nome }} ({{ a.respondentes }})
     </a>
@@ -27,59 +60,72 @@
   </div>
 
   <div class="card p-6">
-    <div class="flex items-center justify-between mb-6">
-      <h2 class="text-lg font-semibold text-slate-900">{{ scope if scope else 'Visão geral' }}</h2>
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="text-lg font-semibold text-slate-900">Panorama de resultados</h2>
       <span class="text-sm text-slate-500">{{ agg.respondentes }} respondente(s)</span>
     </div>
+    <p class="text-sm text-slate-500 mb-6">
+      {{ scope if scope else 'Geral da empresa' }} — leitura rápida de todas as dimensões, agrupadas por item macro.
+    </p>
 
-    {% if agg.respondentes < 3 %}
+    {% if agg.respondentes < min_respondentes %}
       <p class="text-center text-slate-500 py-10">
         {% if agg.respondentes == 0 %}Ainda não há respostas concluídas neste recorte.
-        {% else %}Para preservar o anonimato, o resultado só é exibido com pelo menos 3 respondentes concluídos neste recorte (atual: {{ agg.respondentes }}).{% endif %}
+        {% else %}Para preservar o anonimato, o resultado só é exibido com pelo menos {{ min_respondentes }} respondentes concluídos neste recorte (atual: {{ agg.respondentes }}).{% endif %}
       </p>
     {% else %}
       <div class="flex flex-wrap gap-4 mb-6 text-xs text-slate-600">
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#16a34a"></span> Favorável</span>
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#f59e0b"></span> Atenção</span>
-        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:#dc2626"></span> Risco alto</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:{{ nivel_cor.verde }}"></span> Favorável</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:{{ nivel_cor.amarelo }}"></span> Atenção</span>
+        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:{{ nivel_cor.vermelho }}"></span> Risco alto</span>
+        <span class="text-slate-400">Marcas na barra: cortes de 33 e 66.</span>
       </div>
 
-      {% if agg.top_riscos %}
-      <div class="mb-6 rounded-lg bg-slate-50 border border-slate-200 p-4">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Principais focos de risco do grupo</h3>
-        <div class="flex flex-wrap gap-2">
-          {% for t in agg.top_riscos %}
-          <span class="text-xs font-medium px-2.5 py-1 rounded-full"
-                style="color: {{ nivel_cor.get(t.nivel, '#64748b') }}; background: {{ nivel_cor.get(t.nivel, '#64748b') }}22;">{{ t.nome }}</span>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-
-      {% for d in agg.domains %}
-        {% set subs = agg.subscales | selectattr('dominio', 'equalto', d.key) | selectattr('score', 'ne', None) | list %}
-        {% if subs %}
-        <div class="mb-6">
-          <div class="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
-            <h3 class="font-semibold text-slate-800">{{ d.nome }}</h3>
-            <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style="color: {{ nivel_cor.get(d.nivel, '#64748b') }}; background: {{ nivel_cor.get(d.nivel, '#64748b') }}22;">{{ nivel_txt.get(d.nivel, '—') }}</span>
-          </div>
-          {% for s in subs %}
-          <div class="mb-2.5">
-            <div class="flex justify-between text-sm mb-1">
-              <span class="text-slate-700">{{ s.nome }}</span>
-              <span class="font-semibold text-slate-800">{{ s.score }}</span>
-            </div>
-            <div class="w-full bg-slate-100 rounded-full h-2.5">
-              <div class="h-2.5 rounded-full" style="width: {{ s.score }}%; background: {{ nivel_cor.get(s.nivel, '#94a3b8') }};"></div>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
-      {% endfor %}
+      {% include "_grafico_body.html" %}
     {% endif %}
   </div>
+
+  {% else %}
+  <!-- =========================== ABA RELATÓRIO =========================== -->
+  <div class="card p-6">
+    {% if not relatorio_liberado %}
+      <div class="py-10 text-center">
+        <button type="button" disabled
+                class="rounded-lg px-8 py-3 text-sm font-bold uppercase tracking-wide bg-slate-200 text-slate-400 cursor-not-allowed">
+          Gerar relatório
+        </button>
+        <p class="mt-3 text-sm text-slate-500">
+          O botão será habilitado em <strong>{{ campanha.fim }}</strong>, data de fim do teste.
+        </p>
+        <p class="mt-1 text-xs text-slate-400">
+          Até lá o teste segue aberto para receber respostas.
+        </p>
+      </div>
+
+    {% elif not secoes or secoes[0].resumo.respondentes < min_respondentes %}
+      <p class="text-center text-slate-500 py-10">
+        Ainda não há respostas suficientes para gerar o relatório
+        (mínimo de {{ min_respondentes }} respondentes).
+      </p>
+
+    {% else %}
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-200">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">Relatório de análise</h2>
+          <p class="text-sm text-slate-500">Consolidado geral e por área, com base no COPSOQ II.</p>
+        </div>
+        {% if pdf_disponivel %}
+        <a href="{{ base_path }}/empresa/relatorio.pdf" class="btn-primary">
+          Baixar PDF do consolidado da empresa
+        </a>
+        {% else %}
+        <span class="text-xs text-slate-400">Download em PDF indisponível neste ambiente.</span>
+        {% endif %}
+      </div>
+
+      {% include "_report_body.html" %}
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

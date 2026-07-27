@@ -1,7 +1,16 @@
-// Questionário (página /responder/{token}). Usa as APIs JSON existentes.
+// Questionário. Serve os dois fluxos:
+//  - colaborador logado  → /responder/{token}      (APIs /api/lead/*)
+//  - convidado por e-mail → /nr1/{invite}/responder (APIs /api/nr1/*, sem sessão)
+// As URLs vêm de window.__CFG; sem elas, cai no fluxo logado.
 function responder() {
   const CFG = window.__CFG || {};
   const api = (p) => `${CFG.basePath}/api${p}`;
+  const urls = {
+    questions: CFG.questionsUrl || api(`/tests/${CFG.testId}/questions`),
+    answers: CFG.answersUrl || api(`/lead/${CFG.token}/answers`),
+    submit: CFG.submitUrl || api(`/lead/${CFG.token}/submit`),
+    done: CFG.doneUrl || `${CFG.basePath}/resultado/${CFG.token}`,
+  };
   return {
     questions: [],
     testKind: 'choice',
@@ -22,7 +31,7 @@ function responder() {
 
     async loadQuestions() {
       try {
-        const r = await fetch(api(`/tests/${CFG.testId}/questions`), { credentials: 'same-origin' });
+        const r = await fetch(urls.questions, { credentials: 'same-origin' });
         if (!r.ok) { this.error = 'Não foi possível carregar as perguntas'; return; }
         const data = await r.json();
         this.questions = data.questions || [];
@@ -35,7 +44,7 @@ function responder() {
       this.answers[qid] = value;
       this.error = '';
       try {
-        await fetch(api(`/lead/${CFG.token}/answers`), {
+        await fetch(urls.answers, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -68,7 +77,7 @@ function responder() {
       this.error = '';
       this.loading = true;
       try {
-        const r = await fetch(api(`/lead/${CFG.token}/submit`), {
+        const r = await fetch(urls.submit, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -78,7 +87,7 @@ function responder() {
           const err = await r.json().catch(() => ({}));
           throw new Error(err.detail || 'Erro ao calcular resultado');
         }
-        window.location = `${CFG.basePath}/resultado/${CFG.token}`;
+        window.location = urls.done;
       } catch (e) {
         this.error = e.message || 'Erro inesperado';
         this.loading = false;

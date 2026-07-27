@@ -1,0 +1,65 @@
+{% extends "_publico.html" %}
+{% block title %}Respondendo — {{ test_nome }}{% endblock %}
+{% block head_extra %}
+<script>
+  window.__CFG = {
+    basePath: "{{ base_path }}",
+    testId: {{ test_id }},
+    questionsUrl: "{{ base_path }}/api/nr1/{{ invite_token }}/tests/{{ test_id }}/questions",
+    answersUrl: "{{ base_path }}/api/nr1/{{ invite_token }}/answers",
+    submitUrl: "{{ base_path }}/api/nr1/{{ invite_token }}/submit",
+    doneUrl: "{{ base_path }}/nr1/{{ invite_token }}",
+  };
+</script>
+{% endblock %}
+{% block content %}
+<div x-data="responder()" x-init="init()" x-cloak>
+  <div class="mb-4">
+    <h1 class="text-xl font-bold text-slate-900">{{ test_nome }}</h1>
+    <p class="text-sm text-slate-500">{{ empresa }}</p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 md:p-10">
+    <div class="mb-6" x-show="questions.length > 0">
+      <div class="flex justify-between text-sm text-slate-500 mb-2">
+        <span x-text="`Pergunta ${currentIdx + 1} de ${questions.length}`"></span>
+        <span x-text="`${Math.round(((currentIdx + 1) / questions.length) * 100)}%`"></span>
+      </div>
+      <div class="w-full bg-slate-200 rounded-full h-2">
+        <div class="bg-teal-600 h-2 rounded-full transition-all" :style="`width: ${((currentIdx + 1) / questions.length) * 100}%`"></div>
+      </div>
+    </div>
+
+    <template x-if="questions.length > 0">
+      <div>
+        <p x-show="currentSecao" x-text="currentSecao" class="text-sm font-medium text-teal-700 mb-2"></p>
+        <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
+        <div class="space-y-3">
+          <template x-for="opt in currentOptions" :key="opt.value + opt.label">
+            <button @click="chooseOption(opt.value)"
+              :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
+              class="w-full text-left border-2 rounded-xl px-4 py-3.5 transition">
+              <span x-text="opt.label" class="text-slate-800"></span>
+            </button>
+          </template>
+        </div>
+        <div class="flex justify-between items-center mt-8">
+          <button @click="prevQuestion()" :disabled="currentIdx === 0" class="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-30">← Voltar</button>
+          <p x-show="error" x-text="error" class="text-red-600 text-sm"></p>
+          <template x-if="currentIdx < questions.length - 1">
+            <button @click="nextQuestion()" :disabled="!answers[currentQid]" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">Avançar →</button>
+          </template>
+          <template x-if="currentIdx === questions.length - 1">
+            <button @click="submitTest()" :disabled="!answers[currentQid] || loading" class="bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+              <span x-show="!loading">Enviar minhas respostas</span>
+              <span x-show="loading">Enviando...</span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </template>
+    <div x-show="questions.length === 0" class="text-center text-slate-500 py-10">Carregando perguntas...</div>
+  </div>
+</div>
+{% endblock %}
+{% block body_end %}<script src="{{ base_path }}/static/responder.js"></script>{% endblock %}

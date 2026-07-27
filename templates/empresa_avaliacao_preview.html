@@ -1,0 +1,88 @@
+{% extends "_shell.html" %}
+{% block title %}Revisar convites — {{ company.nome }}{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900 mb-1">Revisar antes de enviar</h1>
+  <p class="text-sm text-slate-600 mb-6">
+    Nada foi salvo ainda. Confira a lista e confirme para disparar os convites.
+  </p>
+
+  <div class="card p-6 mb-6">
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div class="rounded-lg bg-slate-50 p-3 text-center">
+        <div class="text-2xl font-bold text-teal-700">{{ linhas | length }}</div>
+        <div class="text-xs text-slate-500">colaboradores serão convidados</div>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-3 text-center">
+        <div class="text-2xl font-bold text-slate-900">{{ areas_novas | length }}</div>
+        <div class="text-xs text-slate-500">áreas novas serão criadas</div>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-3 text-center">
+        <div class="text-2xl font-bold {{ 'text-amber-600' if erros else 'text-slate-400' }}">{{ erros | length }}</div>
+        <div class="text-xs text-slate-500">linhas com problema</div>
+      </div>
+    </div>
+
+    <p class="mt-5 text-sm text-slate-700">
+      O teste vai receber respostas de hoje até <strong>{{ data_fim_br }}</strong>.
+    </p>
+
+    {% if areas_novas %}
+    <div class="mt-4">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Áreas que serão criadas</div>
+      <div class="flex flex-wrap gap-2">
+        {% for a in areas_novas %}
+        <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700">{{ a }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if erros %}
+  <div class="card p-6 mb-6 border-amber-200 bg-amber-50">
+    <h2 class="text-base font-semibold text-amber-900">Linhas que não serão enviadas</h2>
+    <p class="mt-1 text-sm text-amber-800">
+      Estas linhas foram ignoradas. Você pode confirmar assim mesmo e corrigi-las depois,
+      ou voltar e ajustar a planilha.
+    </p>
+    <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-900">
+      {% for e in erros %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="card p-6 mb-6">
+    <h2 class="mb-4 text-base font-semibold text-slate-900">Quem vai receber o convite</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+            <th class="pb-2 pr-4">Nome</th>
+            <th class="pb-2 pr-4">E-mail</th>
+            <th class="pb-2">Área</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in linhas %}
+          <tr class="border-b border-slate-100">
+            <td class="py-2 pr-4 text-slate-800">{{ l.nome }}</td>
+            <td class="py-2 pr-4 text-slate-600">{{ l.email }}</td>
+            <td class="py-2 text-slate-600">{{ l.area }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-3">
+    <form method="POST" action="{{ base_path }}/empresa/avaliacao/enviar">
+      <input type="hidden" name="payload" value="{{ payload }}">
+      <input type="hidden" name="data_fim" value="{{ data_fim }}">
+      <button type="submit" class="btn-primary">Confirmar e enviar os convites</button>
+    </form>
+    <a href="{{ base_path }}/empresa/avaliacao" class="btn-secondary">Cancelar</a>
+  </div>
+</div>
+{% endblock %}

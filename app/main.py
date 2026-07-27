@@ -3,22 +3,25 @@ import logging
 import re
 import unicodedata
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 
-from . import auth, gemini as gemini_client, mailer, notifier, sheets
+from . import auth, gemini as gemini_client, invites, mailer, notifier, pdf, sheets
 from .config import settings
-from .copsoq import scoring as copsoq_scoring
+from .copsoq import report as copsoq_report, scoring as copsoq_scoring
 from .db import (
     Answer,
+    Campaign,
+    CampaignInvite,
     ChatMessage,
     Company,
     CompanyArea,
@@ -42,6 +45,14 @@ FAVICON_FILE = ASSETS_DIR / "favicon-sai.png"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.globals["base_path"] = settings.base_path
+# Paleta e rótulos do semáforo em um lugar só — usados pelo painel e pelo relatório.
+templates.env.globals["nivel_cor"] = copsoq_report.NIVEL_COR
+templates.env.globals["nivel_txt"] = copsoq_report.NIVEL_LABEL
+# Mesma estrutura de blocos alimenta o painel gráfico e o relatório.
+templates.env.filters["panorama"] = copsoq_report.build_report
+
+# Mínimo de respondentes para exibir um recorte (anonimato — NR-1 / dado sensível).
+MIN_RESPONDENTES = 3
 
 app = FastAPI(title="Strategic AI — Testes Comportamentais")
 
@@ -927,46 +938,224 @@ def resultado_page(token: str, request: Request):
 
 
 # =========================================================================
+# RESPONDENTE CONVIDADO (link único por e-mail, sem senha)
+# =========================================================================
+def _invite_ctx(s, invite_token: str) -> tuple[CampaignInvite | None, Campaign | None, Company | None]:
+    convite = s.query(CampaignInvite).filter(CampaignInvite.token == invite_token).first()
+    if convite is None:
+        return None, None, None
+    campaign = s.get(Campaign, convite.campaign_id)
+    company = s.get(Company, campaign.company_id) if campaign else None
+    return convite, campaign, company
+
+
+def _nr1_status_page(request: Request, estado: str, empresa: str = "", prazo: str = "", status_code: int = 200):
+    """Telas terminais do fluxo por convite: link inválido, prazo encerrado, obrigado."""
+    return templates.TemplateResponse(
+        "nr1_status.html",
+        {"request": request, "estado": estado, "empresa": empresa, "prazo": prazo},
+        status_code=status_code,
+    )
+
+
+@app.get("/nr1/{invite_token}")
+def nr1_intro(invite_token: str, request: Request):
+    with get_session() as s:
+        convite, campaign, company = _invite_ctx(s, invite_token)
+        if convite is None or campaign is None or company is None:
+            return _nr1_status_page(request, "invalido", status_code=404)
+        empresa, prazo = company.nome, _fmt_data(campaign.fim)
+        if convite.respondido_em is not None:
+            return _nr1_status_page(request, "respondido", empresa, prazo)
+        if not campaign.esta_aberta:
+            return _nr1_status_page(request, "encerrado", empresa, prazo)
+        ctx = {"nome": convite.nome, "area": convite.area, "empresa": empresa, "prazo": prazo}
+    return templates.TemplateResponse(
+        "nr1_intro.html", {"request": request, "invite_token": invite_token, **ctx}
+    )
+
+
+@app.post("/nr1/{invite_token}/iniciar")
+def nr1_iniciar(invite_token: str, request: Request):
+    with get_session() as s:
+        convite, campaign, company = _invite_ctx(s, invite_token)
+        if convite is None or campaign is None or company is None:
+            return _nr1_status_page(request, "invalido", status_code=404)
+        if convite.respondido_em is not None:
+            return _nr1_status_page(request, "respondido", company.nome, _fmt_data(campaign.fim))
+        if not campaign.esta_aberta:
+            return _nr1_status_page(request, "encerrado", company.nome, _fmt_data(campaign.fim))
+
+        # Retoma o rascunho anterior se o colaborador fechou a aba no meio.
+        lead = None
+        if convite.lead_token:
+            lead = s.get(Lead, convite.lead_token)
+        if lead is None:
+            partes = (convite.nome or "").split()
+            lead = Lead(
+                token=uuid.uuid4().hex,
+                user_id=None,
+                test_id=campaign.test_id or COPSOQ_TEST_ID,
+                nome=partes[0] if partes else convite.nome,
+                sobrenome=" ".join(partes[1:]) if len(partes) > 1 else "",
+                whatsapp="",
+                email=convite.email,
+                company_id=company.id,
+                area=convite.area,
+                campaign_id=campaign.id,
+            )
+            s.add(lead)
+            convite.lead_token = lead.token
+            s.commit()
+    return RedirectResponse(url=f"{settings.base_path}/nr1/{invite_token}/responder", status_code=302)
+
+
+@app.get("/nr1/{invite_token}/responder")
+def nr1_responder(invite_token: str, request: Request):
+    with get_session() as s:
+        convite, campaign, company = _invite_ctx(s, invite_token)
+        if convite is None or campaign is None or company is None:
+            return _nr1_status_page(request, "invalido", status_code=404)
+        if convite.respondido_em is not None:
+            return _nr1_status_page(request, "respondido", company.nome, _fmt_data(campaign.fim))
+        if not campaign.esta_aberta:
+            return _nr1_status_page(request, "encerrado", company.nome, _fmt_data(campaign.fim))
+        if not convite.lead_token:
+            return RedirectResponse(url=f"{settings.base_path}/nr1/{invite_token}", status_code=302)
+        test = get_test(campaign.test_id or COPSOQ_TEST_ID) or {}
+        ctx = {
+            "invite_token": invite_token,
+            "test_id": campaign.test_id or COPSOQ_TEST_ID,
+            "test_nome": test.get("nome", ""),
+            "nome": convite.nome,
+            "empresa": company.nome,
+        }
+    return templates.TemplateResponse("nr1_responder.html", {"request": request, **ctx})
+
+
+def _invite_lead(s, invite_token: str) -> tuple[CampaignInvite, Campaign, Lead]:
+    """Convite ativo + lead em aberto, ou 404/410 explicando o motivo."""
+    convite, campaign, _company = _invite_ctx(s, invite_token)
+    if convite is None or campaign is None:
+        raise HTTPException(404, "Link inválido")
+    if not campaign.esta_aberta:
+        raise HTTPException(410, "O prazo para responder este teste já encerrou.")
+    if convite.respondido_em is not None:
+        raise HTTPException(410, "Este teste já foi respondido.")
+    lead = s.get(Lead, convite.lead_token) if convite.lead_token else None
+    if lead is None:
+        raise HTTPException(404, "Sessão do teste não encontrada")
+    return convite, campaign, lead
+
+
+@app.get("/api/nr1/{invite_token}/tests/{test_id}/questions")
+def nr1_questions(invite_token: str, test_id: int):
+    with get_session() as s:
+        _convite, _campaign, _lead = _invite_lead(s, invite_token)
+    engine = get_engine(test_id)
+    if engine is None:
+        raise HTTPException(404, "Teste não encontrado")
+    return {"questions": engine.public_questions(), "kind": engine.kind}
+
+
+@app.patch("/api/nr1/{invite_token}/answers")
+def nr1_save_answers(invite_token: str, data: AnswersPatch):
+    with get_session() as s:
+        _convite, _campaign, lead = _invite_lead(s, invite_token)
+        engine = get_engine(lead.test_id)
+        if engine is None:
+            raise HTTPException(400, "Teste inválido")
+        existentes = {a.question_id: a for a in s.query(Answer).filter(Answer.token == lead.token).all()}
+        for qid, value in data.answers.items():
+            if not engine.valid_value(qid, value):
+                continue
+            if qid in existentes:
+                existentes[qid].value = value
+            else:
+                s.add(Answer(token=lead.token, question_id=qid, value=value))
+        s.commit()
+    return {"ok": True}
+
+
+@app.post("/api/nr1/{invite_token}/submit")
+def nr1_submit(invite_token: str, data: SubmitIn | None = None):
+    with get_session() as s:
+        convite, _campaign, lead = _invite_lead(s, invite_token)
+        engine = get_engine(lead.test_id)
+        if engine is None:
+            raise HTTPException(400, "Teste inválido")
+
+        existentes = {a.question_id: a for a in s.query(Answer).filter(Answer.token == lead.token).all()}
+        for qid, value in ((data.answers if data else None) or {}).items():
+            if not engine.valid_value(qid, value):
+                continue
+            if qid in existentes:
+                existentes[qid].value = value
+            else:
+                s.add(Answer(token=lead.token, question_id=qid, value=value))
+        s.commit()
+
+        respostas = {a.question_id: a.value for a in s.query(Answer).filter(Answer.token == lead.token).all()}
+        faltando = engine.missing(respostas)
+        if faltando:
+            raise HTTPException(400, f"Faltam {len(faltando)} resposta(s)")
+
+        lead.result_json = json.dumps(engine.score(respostas), ensure_ascii=False)
+        lead.concluido_em = datetime.utcnow()
+        convite.respondido_em = lead.concluido_em
+        s.commit()
+    return {"ok": True, "redirect": f"{settings.base_path}/nr1/{invite_token}"}
+
+
+# =========================================================================
 # GESTOR DA EMPRESA (painel do cliente)
 # =========================================================================
-def _copsoq_agg_for(company_id: str, area: str | None) -> dict:
+def _gestor_ids(s, company_id: str) -> set[str]:
+    """IDs de quem NÃO entra no agregado: gestores e super admins do tenant.
+
+    A resposta do gestor não pode distorcer as médias nem quebrar o anonimato do
+    grupo. Filtrar por exclusão (em vez de exigir `role == member`) é o que permite
+    contar também os respondentes anônimos vindos de convite, que não têm conta.
+    """
+    return {
+        u.id for u in s.query(User).filter(User.tenant_id == company_id, User.role != auth.MEMBER).all()
+    }
+
+
+def _copsoq_leads(s, company_id: str, area: str | None = None, campaign_id: str | None = None):
+    """Leads COPSOQ concluídos que entram no resultado do recorte."""
+    q = s.query(Lead).filter(
+        Lead.company_id == company_id,
+        Lead.test_id == COPSOQ_TEST_ID,
+        Lead.concluido_em.isnot(None),
+    )
+    if campaign_id:
+        q = q.filter(Lead.campaign_id == campaign_id)
+    if area:
+        q = q.filter(Lead.area == area)
+    excluir = _gestor_ids(s, company_id)
+    return [lead for lead in q.all() if lead.user_id not in excluir]
+
+
+def _copsoq_agg_for(company_id: str, area: str | None, campaign_id: str | None = None) -> dict:
     with get_session() as s:
-        # Só respondentes 'member' entram no agregado — a resposta do gestor (admin)
-        # não distorce as médias nem quebra o anonimato do grupo.
-        q = (
-            s.query(Lead)
-            .join(User, Lead.user_id == User.id)
-            .filter(
-                Lead.company_id == company_id,
-                Lead.test_id == COPSOQ_TEST_ID,
-                Lead.concluido_em.isnot(None),
-                User.role == auth.MEMBER,
-            )
-        )
-        if area:
-            q = q.filter(Lead.area == area)
         results = []
-        for lead in q.all():
+        for lead in _copsoq_leads(s, company_id, area, campaign_id):
             r = _lead_result(lead)
             if r and r.get("type") == "copsoq":
                 results.append(r)
     return copsoq_scoring.aggregate(results)
 
 
-def _company_areas_com_contagem(company_id: str) -> list[dict]:
+def _company_areas_com_contagem(company_id: str, campaign_id: str | None = None) -> list[dict]:
     with get_session() as s:
         areas = s.query(CompanyArea).filter_by(company_id=company_id).order_by(CompanyArea.nome.asc()).all()
-        rows = []
-        for a in areas:
-            n = (
-                s.query(func.count(Lead.token))
-                .join(User, Lead.user_id == User.id)
-                .filter(Lead.company_id == company_id, Lead.test_id == COPSOQ_TEST_ID,
-                        Lead.concluido_em.isnot(None), Lead.area == a.nome,
-                        User.role == auth.MEMBER)
-                .scalar()
-            )
-            rows.append({"id": a.id, "nome": a.nome, "respondentes": n or 0})
+        leads = _copsoq_leads(s, company_id, campaign_id=campaign_id)
+        contagem: dict[str, int] = {}
+        for lead in leads:
+            if lead.area:
+                contagem[lead.area] = contagem.get(lead.area, 0) + 1
+        rows = [{"id": a.id, "nome": a.nome, "respondentes": contagem.get(a.nome, 0)} for a in areas]
     return rows
 
 
@@ -1063,29 +1252,421 @@ def empresa_gestao(request: Request):
     )
 
 
-@app.get("/empresa/resultados")
-def empresa_resultados(request: Request, area: str | None = None):
+# =========================================================================
+# CAMPANHA NR-1 (convites por e-mail + prazo de resposta)
+# =========================================================================
+try:
+    SP_TZ = ZoneInfo("America/Sao_Paulo")
+except ZoneInfoNotFoundError:  # ambiente sem base de fusos (ver tzdata no requirements)
+    log.warning("Base de fusos indisponível — usando UTC-3 fixo para as datas da campanha")
+    SP_TZ = timezone(timedelta(hours=-3))
+
+
+def _fim_do_dia_utc(data: date) -> datetime:
+    """23:59:59 do dia informado em São Paulo, convertido para UTC (naive)."""
+    local = datetime.combine(data, time(23, 59, 59), tzinfo=SP_TZ)
+    return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _para_data_local(dt: datetime) -> datetime:
+    """UTC naive → horário de São Paulo, para exibir a data ao gestor."""
+    return dt.replace(tzinfo=timezone.utc).astimezone(SP_TZ)
+
+
+def _fmt_data(dt: datetime | None) -> str:
+    return _para_data_local(dt).strftime("%d/%m/%Y") if dt else ""
+
+
+def _campanha_atual(s, company_id: str) -> Campaign | None:
+    """Campanha mais recente da empresa (aberta ou já encerrada)."""
+    return (
+        s.query(Campaign)
+        .filter(Campaign.company_id == company_id)
+        .order_by(Campaign.created_at.desc())
+        .first()
+    )
+
+
+def _campanha_ctx(campaign: Campaign | None, invites_rows: list[CampaignInvite] | None = None) -> dict | None:
+    if campaign is None:
+        return None
+    rows = invites_rows or []
+    responderam = sum(1 for i in rows if i.respondido_em)
+    return {
+        "id": campaign.id,
+        "titulo": campaign.titulo,
+        "inicio": _fmt_data(campaign.inicio),
+        "fim": _fmt_data(campaign.fim),
+        "aberta": campaign.esta_aberta,
+        "total": len(rows),
+        "responderam": responderam,
+        "pendentes": len(rows) - responderam,
+        "falhas": sum(1 for i in rows if i.erro_envio),
+    }
+
+
+@app.get("/empresa/avaliacao")
+def empresa_avaliacao(request: Request, ok: str | None = None, error: str | None = None):
     user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
     if redir:
         return redir
     tenant_id, company_data, impersonating = _manager_tenant(request, user)
     if not tenant_id:
         return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    areas = _company_areas_com_contagem(tenant_id)
-    total = sum(a["respondentes"] for a in areas)
-    scope = area if area else None
-    agg = _copsoq_agg_for(tenant_id, scope)
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        rows = (
+            s.query(CampaignInvite)
+            .filter(CampaignInvite.campaign_id == campaign.id)
+            .order_by(CampaignInvite.area.asc(), CampaignInvite.nome.asc())
+            .all()
+            if campaign else []
+        )
+        campanha = _campanha_ctx(campaign, rows)
+        convidados = [
+            {
+                "id": i.id,
+                "nome": i.nome,
+                "email": i.email,
+                "area": i.area,
+                "respondeu": i.respondido_em is not None,
+                "erro": i.erro_envio,
+            }
+            for i in rows
+        ]
+
     return templates.TemplateResponse(
-        "empresa_resultados.html",
+        "empresa_avaliacao.html",
         {
             "request": request,
             "company": company_data,
-            "areas": areas,
-            "total_respondentes": total,
-            "scope": scope,
-            "agg": agg,
-            **_shell_ctx(user, "resultados", impersonating=impersonating, role=auth.ADMIN),
+            "campanha": campanha,
+            "convidados": convidados,
+            "min_data": (datetime.now(SP_TZ).date() + timedelta(days=1)).isoformat(),
+            "ok": ok,
+            "error": error,
+            **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
         },
+    )
+
+
+@app.post("/empresa/avaliacao/preview")
+async def empresa_avaliacao_preview(
+    request: Request,
+    planilha: UploadFile = File(...),
+    data_fim: str = Form(...),
+):
+    """Lê a planilha e mostra a prévia. Nada é gravado nesta etapa."""
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, company_data, impersonating = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    def falhou(msg: str):
+        return RedirectResponse(
+            url=f"{settings.base_path}/empresa/avaliacao?error={quote(msg)}", status_code=302
+        )
+
+    try:
+        fim = date.fromisoformat(data_fim)
+    except ValueError:
+        return falhou("Data de fim inválida.")
+    if fim <= datetime.now(SP_TZ).date():
+        return falhou("A data de fim precisa ser posterior a hoje.")
+
+    conteudo = await planilha.read()
+    try:
+        linhas, erros = invites.parse_planilha(planilha.filename or "", conteudo)
+    except ValueError as exc:
+        return falhou(str(exc))
+    except Exception:
+        log.exception("Falha ao ler a planilha de convites")
+        return falhou("Não consegui ler esse arquivo. Envie uma planilha .xlsx ou .csv.")
+
+    if not linhas:
+        return falhou("Não encontrei nenhuma linha válida na planilha.")
+
+    with get_session() as s:
+        existentes = {a.nome for a in s.query(CompanyArea).filter_by(company_id=tenant_id).all()}
+    areas_planilha = sorted({l["area"] for l in linhas})
+    areas_novas = [a for a in areas_planilha if a not in existentes]
+
+    return templates.TemplateResponse(
+        "empresa_avaliacao_preview.html",
+        {
+            "request": request,
+            "company": company_data,
+            "linhas": linhas,
+            "erros": erros,
+            "areas_novas": areas_novas,
+            "data_fim": data_fim,
+            "data_fim_br": fim.strftime("%d/%m/%Y"),
+            "payload": json.dumps(linhas, ensure_ascii=False),
+            **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
+        },
+    )
+
+
+def _enviar_convites(campaign_id: str) -> None:
+    """Dispara os e-mails da campanha (roda em background)."""
+    with get_session() as s:
+        campaign = s.get(Campaign, campaign_id)
+        if campaign is None:
+            return
+        company = s.get(Company, campaign.company_id)
+        empresa_nome = company.nome if company else "sua empresa"
+        prazo = _fmt_data(campaign.fim)
+        pendentes = (
+            s.query(CampaignInvite)
+            .filter(CampaignInvite.campaign_id == campaign_id, CampaignInvite.enviado_em.is_(None))
+            .all()
+        )
+        for convite in pendentes:
+            link = f"{settings.public_base_url}{settings.base_path}/nr1/{convite.token}"
+            try:
+                mailer.send_invite_email(convite.email, convite.nome, empresa_nome, prazo, link)
+                convite.enviado_em = datetime.utcnow()
+                convite.erro_envio = None
+            except Exception as exc:
+                log.error("Falha ao enviar convite para %s: %s", convite.email, exc)
+                convite.erro_envio = str(exc)[:300]
+            s.commit()
+
+
+@app.post("/empresa/avaliacao/enviar")
+def empresa_avaliacao_enviar(
+    request: Request,
+    bg: BackgroundTasks,
+    payload: str = Form(...),
+    data_fim: str = Form(...),
+):
+    """Confirma a prévia: cria a campanha, os convites e dispara os e-mails."""
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company_data, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    def falhou(msg: str):
+        return RedirectResponse(
+            url=f"{settings.base_path}/empresa/avaliacao?error={quote(msg)}", status_code=302
+        )
+
+    try:
+        fim = date.fromisoformat(data_fim)
+        linhas = json.loads(payload)
+    except (ValueError, json.JSONDecodeError):
+        return falhou("Não consegui processar o envio. Refaça o upload da planilha.")
+    if fim <= datetime.now(SP_TZ).date():
+        return falhou("A data de fim precisa ser posterior a hoje.")
+    if not linhas:
+        return falhou("Nenhum colaborador para convidar.")
+
+    with get_session() as s:
+        # Guarda contra duplo envio (duplo clique / F5 na confirmação): enquanto
+        # houver campanha aberta, não se cria outra.
+        atual = _campanha_atual(s, tenant_id)
+        if atual is not None and atual.esta_aberta:
+            return falhou("Já existe um teste em andamento. Aguarde a data de fim para iniciar outro.")
+
+        company = s.get(Company, tenant_id)
+        campaign = Campaign(
+            id=uuid.uuid4().hex,
+            company_id=tenant_id,
+            test_id=COPSOQ_TEST_ID,
+            titulo=f"Avaliação NR-1 — {datetime.now(SP_TZ).strftime('%d/%m/%Y')}",
+            inicio=datetime.utcnow(),
+            fim=_fim_do_dia_utc(fim),
+            created_by=user.id,
+        )
+        s.add(campaign)
+
+        existentes = {a.nome for a in s.query(CompanyArea).filter_by(company_id=tenant_id).all()}
+        for area_nome in sorted({l["area"] for l in linhas}):
+            if area_nome not in existentes:
+                s.add(CompanyArea(company_id=tenant_id, nome=area_nome))
+
+        for linha in linhas:
+            s.add(CampaignInvite(
+                campaign_id=campaign.id,
+                token=uuid.uuid4().hex,
+                nome=linha["nome"],
+                email=linha["email"],
+                area=linha["area"],
+            ))
+        s.commit()
+        campaign_id = campaign.id
+        total = len(linhas)
+        empresa_nome = company.nome if company else ""
+
+    log.info("Campanha %s criada para %s com %s convites", campaign_id, empresa_nome, total)
+    bg.add_task(_enviar_convites, campaign_id)
+    msg = f"Campanha criada. Estamos enviando o convite para {total} colaborador(es)."
+    return RedirectResponse(url=f"{settings.base_path}/empresa/avaliacao?ok={quote(msg)}", status_code=302)
+
+
+@app.post("/empresa/avaliacao/reenviar")
+def empresa_avaliacao_reenviar(request: Request, bg: BackgroundTasks):
+    """Reenvia o convite para quem ainda não respondeu."""
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, _company_data, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        if campaign is None or not campaign.esta_aberta:
+            return RedirectResponse(
+                url=f"{settings.base_path}/empresa/avaliacao?error={quote('Não há campanha aberta.')}",
+                status_code=302,
+            )
+        pendentes = (
+            s.query(CampaignInvite)
+            .filter(CampaignInvite.campaign_id == campaign.id, CampaignInvite.respondido_em.is_(None))
+            .all()
+        )
+        for convite in pendentes:
+            convite.enviado_em = None
+        s.commit()
+        campaign_id, n = campaign.id, len(pendentes)
+
+    bg.add_task(_enviar_convites, campaign_id)
+    msg = f"Reenviando o convite para {n} colaborador(es) que ainda não responderam."
+    return RedirectResponse(url=f"{settings.base_path}/empresa/avaliacao?ok={quote(msg)}", status_code=302)
+
+
+# =========================================================================
+# RESULTADOS DO GESTOR — abas Gráfico e Relatório
+# =========================================================================
+def _resultados_ctx(request: Request, user: User, area: str | None, aba: str) -> dict | RedirectResponse:
+    tenant_id, company_data, impersonating = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        rows = (
+            s.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id).all()
+            if campaign else []
+        )
+        campanha = _campanha_ctx(campaign, rows)
+
+    areas = _company_areas_com_contagem(tenant_id)
+    total = sum(a["respondentes"] for a in areas)
+    scope = area or None
+    agg = _copsoq_agg_for(tenant_id, scope)
+
+    return {
+        "request": request,
+        "company": company_data,
+        "areas": areas,
+        "total_respondentes": total,
+        "scope": scope,
+        "agg": agg,
+        "aba": aba,
+        "campanha": campanha,
+        "min_respondentes": MIN_RESPONDENTES,
+        "tenant_id": tenant_id,
+        "impersonating": impersonating,
+    }
+
+
+def _relatorio_secoes(tenant_id: str) -> list[dict]:
+    """Consolidado geral da empresa + uma seção por área com respondentes suficientes."""
+    secoes = []
+    geral = _copsoq_agg_for(tenant_id, None)
+    secoes.append({
+        "titulo": "Consolidado geral da empresa",
+        "escopo": "geral",
+        "agg": geral,
+        "resumo": copsoq_report.resumo(geral),
+        "gargalos": copsoq_report.top_gargalos(geral),
+        "blocos": copsoq_report.build_report(geral),
+    })
+    for a in _company_areas_com_contagem(tenant_id):
+        if a["respondentes"] < MIN_RESPONDENTES:
+            continue
+        agg = _copsoq_agg_for(tenant_id, a["nome"])
+        secoes.append({
+            "titulo": f"Área: {a['nome']}",
+            "escopo": a["nome"],
+            "agg": agg,
+            "resumo": copsoq_report.resumo(agg),
+            "gargalos": copsoq_report.top_gargalos(agg),
+            "blocos": copsoq_report.build_report(agg),
+        })
+    return secoes
+
+
+@app.get("/empresa/resultados")
+def empresa_resultados(request: Request, area: str | None = None, aba: str = "grafico"):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    aba = aba if aba in ("grafico", "relatorio") else "grafico"
+    ctx = _resultados_ctx(request, user, area, aba)
+    if isinstance(ctx, RedirectResponse):
+        return ctx
+
+    tenant_id = ctx.pop("tenant_id")
+    impersonating = ctx.pop("impersonating")
+    campanha = ctx["campanha"]
+
+    # O relatório só é liberado quando o teste encerra. Sem campanha cadastrada,
+    # não há prazo a respeitar e o relatório fica disponível.
+    relatorio_liberado = campanha is None or not campanha["aberta"]
+    ctx["relatorio_liberado"] = relatorio_liberado
+    ctx["secoes"] = _relatorio_secoes(tenant_id) if (aba == "relatorio" and relatorio_liberado) else []
+    ctx["pdf_disponivel"] = pdf.disponivel()
+
+    return templates.TemplateResponse(
+        "empresa_resultados.html",
+        {**ctx, **_shell_ctx(user, "resultados", impersonating=impersonating, role=auth.ADMIN)},
+    )
+
+
+@app.get("/empresa/relatorio.pdf")
+def empresa_relatorio_pdf(request: Request):
+    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    if redir:
+        return redir
+    tenant_id, company_data, _imp = _manager_tenant(request, user)
+    if not tenant_id:
+        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        campanha = _campanha_ctx(campaign, [])
+    if campanha and campanha["aberta"]:
+        raise HTTPException(403, "O relatório só fica disponível quando o teste é encerrado.")
+
+    secoes = _relatorio_secoes(tenant_id)
+    html = templates.get_template("relatorio_pdf.html").render(
+        company=company_data,
+        secoes=secoes,
+        campanha=campanha,
+        gerado_em=datetime.now(SP_TZ).strftime("%d/%m/%Y"),
+        nivel_cor=copsoq_report.NIVEL_COR,
+        nivel_txt=copsoq_report.NIVEL_LABEL,
+        base_path=settings.base_path,
+    )
+    try:
+        buffer = pdf.html_para_pdf(html, base_url=str(APP_DIR))
+    except pdf.PdfIndisponivel as exc:
+        raise HTTPException(503, str(exc))
+
+    slug = _slugify(company_data["nome"]) if company_data else "empresa"
+    filename = f"relatorio-nr1-{slug}-{datetime.now(SP_TZ).strftime('%Y-%m-%d')}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

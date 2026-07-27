@@ -1,0 +1,50 @@
+{% extends "_publico.html" %}
+{% block title %}Responder o teste da NR-1 — {{ empresa }}{% endblock %}
+{% block content %}
+<div class="card p-6 sm:p-10">
+  <p class="text-xs font-semibold uppercase tracking-widest text-teal-700">Avaliação NR-1</p>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Olá, {{ nome.split()[0] }}.</h1>
+
+  <p class="mt-4 text-slate-600 leading-relaxed">
+    A <strong>{{ empresa }}</strong> está fazendo a avaliação de saúde e bem-estar no trabalho
+    exigida pela NR-1, e a sua participação é importante.
+  </p>
+
+  <div class="mt-6 space-y-3">
+    <div class="flex gap-3 rounded-lg bg-slate-50 p-4">
+      <span class="text-teal-700 font-bold">1</span>
+      <p class="text-sm text-slate-700">
+        São perguntas rápidas sobre o seu dia a dia de trabalho. Leva cerca de <strong>15 minutos</strong>.
+      </p>
+    </div>
+    <div class="flex gap-3 rounded-lg bg-slate-50 p-4">
+      <span class="text-teal-700 font-bold">2</span>
+      <p class="text-sm text-slate-700">
+        Não existe resposta certa ou errada. Responda pensando em como as coisas realmente são.
+      </p>
+    </div>
+    <div class="flex gap-3 rounded-lg bg-slate-50 p-4">
+      <span class="text-teal-700 font-bold">3</span>
+      <p class="text-sm text-slate-700">
+        Suas respostas são <strong>confidenciais</strong>. A empresa vê apenas o resultado do grupo,
+        nunca as respostas de uma pessoa.
+      </p>
+    </div>
+  </div>
+
+  <div class="mt-6 rounded-lg border-l-4 border-teal-600 bg-teal-50 px-4 py-3">
+    <p class="text-sm font-semibold text-teal-800">Você pode responder até {{ prazo }}.</p>
+  </div>
+
+  <form method="POST" action="{{ base_path }}/nr1/{{ invite_token }}/iniciar" class="mt-8">
+    <button type="submit"
+            class="w-full rounded-lg bg-teal-700 px-6 py-3.5 text-base font-bold text-white hover:bg-teal-800 sm:w-auto">
+      Começar o teste
+    </button>
+  </form>
+
+  <p class="mt-6 text-xs text-slate-400">
+    Área informada pela empresa: {{ area }}. Se estiver errada, avise seu gestor antes de começar.
+  </p>
+</div>
+{% endblock %}

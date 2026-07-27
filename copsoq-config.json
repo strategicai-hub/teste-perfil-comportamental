@@ -1,0 +1,96 @@
+{
+  "meta": {
+    "instrumento": "COPSOQ II - Versão Longa",
+    "adaptacao": "Silva, C. et al., 2011 (PT)",
+    "totalQuestoes": 119,
+    "escalaLikert": [1, 2, 3, 4, 5],
+    "escalaSaida": [0, 100],
+    "versaoConfig": "1.0",
+    "observacao": "O mapeamento questao->dimensao e os itens de pontuacao reversa devem seguir o manual oficial do COPSOQ II. Os campos 'questoes' abaixo sao a estrutura de agrupamento; ajuste os intervalos conforme o manual antes de producao."
+  },
+  "faixas": {
+    "descricao": "Tercis. A cor/rotulo depende da DIRECAO da dimensao.",
+    "limites": { "baixo": [0, 33], "medio": [34, 66], "alto": [67, 100] },
+    "regra": {
+      "demanda": { "baixo": "favoravel", "medio": "atencao", "alto": "risco_alto" },
+      "recurso": { "alto": "favoravel", "medio": "atencao", "baixo": "risco_alto" }
+    },
+    "rotulos": {
+      "favoravel": { "label": "Favorável", "cor": "#1f9d57" },
+      "atencao": { "label": "Atenção", "cor": "#c9860f" },
+      "risco_alto": { "label": "Risco alto", "cor": "#d23b3f" }
+    }
+  },
+  "classificacaoItemMacro": "pior_faixa_entre_dimensoes",
+  "privacidade": { "minRespondentesPorRecorte": 5 },
+  "itensMacro": [
+    { "id": 1, "nome": "Exigências laborais", "dimensoes": ["exig_quant","ritmo","exig_cognit","exig_emoc","esconder_emoc"] },
+    { "id": 2, "nome": "Organização e conteúdo do trabalho", "dimensoes": ["influencia","desenvolvimento","variacao","significado","compromisso"] },
+    { "id": 3, "nome": "Relações sociais e liderança", "dimensoes": ["previsibilidade","clareza_papel","recompensas","conflitos_papeis","apoio_colegas","apoio_superiores","comunidade","qualidade_lideranca"] },
+    { "id": 4, "nome": "Interface trabalho–indivíduo", "dimensoes": ["satisfacao","inseguranca","conflito_tf","conflito_ft"] },
+    { "id": 5, "nome": "Valores no local de trabalho", "dimensoes": ["confianca_horizontal","confianca_vertical","justica","inclusao"] },
+    { "id": 6, "nome": "Saúde e bem-estar", "dimensoes": ["saude_geral","sono","burnout","estresse","depressivos","somaticos","cognitivos"] },
+    { "id": 7, "nome": "Personalidade / autoeficácia", "dimensoes": ["autoeficacia"] },
+    { "id": 8, "nome": "Comportamentos ofensivos", "dimensoes": ["comport_ofensivos"] }
+  ],
+  "dimensoes": [
+    { "id": "exig_quant", "nome": "Exigências quantitativas", "direcao": "demanda", "exemploEscore": 42 },
+    { "id": "ritmo", "nome": "Ritmo de trabalho", "direcao": "demanda", "exemploEscore": 60 },
+    { "id": "exig_cognit", "nome": "Exigências cognitivas", "direcao": "demanda", "exemploEscore": 49 },
+    { "id": "exig_emoc", "nome": "Exigências emocionais", "direcao": "demanda", "exemploEscore": 60 },
+    { "id": "esconder_emoc", "nome": "Exigências para esconder emoções", "direcao": "demanda", "exemploEscore": 54 },
+    { "id": "influencia", "nome": "Influência no trabalho", "direcao": "recurso", "exemploEscore": 58 },
+    { "id": "desenvolvimento", "nome": "Possibilidades de desenvolvimento", "direcao": "recurso", "exemploEscore": 54 },
+    { "id": "variacao", "nome": "Variação do trabalho", "direcao": "recurso", "exemploEscore": 55 },
+    { "id": "significado", "nome": "Significado do trabalho", "direcao": "recurso", "exemploEscore": 59 },
+    { "id": "compromisso", "nome": "Compromisso com o local", "direcao": "recurso", "exemploEscore": 55 },
+    { "id": "previsibilidade", "nome": "Previsibilidade", "direcao": "recurso", "exemploEscore": 53 },
+    { "id": "clareza_papel", "nome": "Clareza do papel", "direcao": "recurso", "exemploEscore": 58 },
+    { "id": "recompensas", "nome": "Recompensas / reconhecimento", "direcao": "recurso", "exemploEscore": 53 },
+    { "id": "conflitos_papeis", "nome": "Conflitos de papéis", "direcao": "demanda", "exemploEscore": 57 },
+    { "id": "apoio_colegas", "nome": "Apoio social de colegas", "direcao": "recurso", "exemploEscore": 56 },
+    { "id": "apoio_superiores", "nome": "Apoio social de superiores", "direcao": "recurso", "exemploEscore": 58 },
+    { "id": "comunidade", "nome": "Comunidade social no trabalho", "direcao": "recurso", "exemploEscore": 56 },
+    { "id": "qualidade_lideranca", "nome": "Qualidade da liderança", "direcao": "recurso", "exemploEscore": 56 },
+    { "id": "satisfacao", "nome": "Satisfação no trabalho", "direcao": "recurso", "exemploEscore": 59 },
+    { "id": "inseguranca", "nome": "Insegurança laboral", "direcao": "demanda", "exemploEscore": 48 },
+    { "id": "conflito_tf", "nome": "Conflito trabalho–família", "direcao": "demanda", "exemploEscore": 46 },
+    { "id": "conflito_ft", "nome": "Conflito família–trabalho", "direcao": "demanda", "exemploEscore": 59 },
+    { "id": "confianca_horizontal", "nome": "Confiança horizontal (colegas)", "direcao": "recurso", "exemploEscore": 47 },
+    { "id": "confianca_vertical", "nome": "Confiança vertical (gestão)", "direcao": "recurso", "exemploEscore": 48 },
+    { "id": "justica", "nome": "Justiça e respeito", "direcao": "recurso", "exemploEscore": 54 },
+    { "id": "inclusao", "nome": "Inclusão / responsabilidade social", "direcao": "recurso", "exemploEscore": 59 },
+    { "id": "saude_geral", "nome": "Saúde geral (autopercepção)", "direcao": "recurso", "exemploEscore": 70 },
+    { "id": "sono", "nome": "Problemas de sono", "direcao": "demanda", "exemploEscore": 39 },
+    { "id": "burnout", "nome": "Burnout (esgotamento)", "direcao": "demanda", "exemploEscore": 46 },
+    { "id": "estresse", "nome": "Estresse", "direcao": "demanda", "exemploEscore": 50 },
+    { "id": "depressivos", "nome": "Sintomas depressivos", "direcao": "demanda", "exemploEscore": 49 },
+    { "id": "somaticos", "nome": "Sintomas somáticos de estresse", "direcao": "demanda", "exemploEscore": 50 },
+    { "id": "cognitivos", "nome": "Sintomas cognitivos de estresse", "direcao": "demanda", "exemploEscore": 50 },
+    { "id": "autoeficacia", "nome": "Autoeficácia", "direcao": "recurso", "exemploEscore": 53 },
+    { "id": "comport_ofensivos", "nome": "Comportamentos ofensivos", "direcao": "demanda", "exemploEscore": 49 }
+  ],
+  "templatesDevolutiva": {
+    "descricao": "Texto padrao por faixa x direcao. Variaveis: {nome} {escore}. A camada de IA reescreve/ajusta a intensidade conforme {escore}.",
+    "demanda": {
+      "favoravel": "{nome} apresenta baixo nível de exposição ({escore}/100). O fator está sob controle e não indica risco relevante neste momento. Recomenda-se manter as boas práticas atuais.",
+      "atencao": "{nome} encontra-se em nível moderado de exposição ({escore}/100). Há indícios de que esse fator ocorre com frequência relevante para parte dos respondentes. Recomenda-se monitoramento e medidas preventivas antes que evolua para risco alto.",
+      "risco_alto": "{nome} apresenta alto nível de exposição ({escore}/100), configurando risco psicossocial prioritário. Recomenda-se registro no PGR e ação corretiva com responsável, prazo e indicador."
+    },
+    "recurso": {
+      "favoravel": "{nome} está em patamar favorável ({escore}/100), atuando como recurso protetor. Convém preservar e reforçar as condições que sustentam esse resultado.",
+      "atencao": "{nome} situa-se em patamar intermediário ({escore}/100). O recurso existe, mas de forma inconsistente. Recomenda-se fortalecer as condições que o sustentam para reduzir o risco.",
+      "risco_alto": "{nome} encontra-se em patamar crítico ({escore}/100): a ausência desse recurso é fonte de risco. Recomenda-se intervenção prioritária e registro no PGR."
+    }
+  },
+  "bibliotecaAcoes": {
+    "descricao": "Medida sugerida por dimensao quando faixa = atencao ou risco_alto. Base para o gerador do Plano de Acao.",
+    "ritmo": { "medida": "Revisar metas e dimensionamento de equipe; regular banco de horas e pausas; redistribuir picos de demanda.", "tipo": "Controle administrativo (fonte)", "nivel": "Primário", "responsavelSugerido": "Gestão + RH", "prazoDias": 90, "indicador": "Índice de carga percebida; horas extras por setor" },
+    "exig_emoc": { "medida": "Canal de apoio/escuta; treinamento de manejo emocional; rodízio e pausas em funções críticas.", "tipo": "Treinamento + apoio", "nivel": "Secundário", "responsavelSugerido": "RH + SESMT", "prazoDias": 150, "indicador": "Adesão ao canal; escore na reaplicação" },
+    "conflito_ft": { "medida": "Política de flexibilidade e desconexão; revisão de jornada; limites a demandas fora do horário.", "tipo": "Controle administrativo", "nivel": "Primário", "responsavelSugerido": "Gestão + Diretoria", "prazoDias": 120, "indicador": "Acionamentos fora do horário; escore de conflito" },
+    "conflitos_papeis": { "medida": "Clarear atribuições e responsabilidades (descrições de cargo); alinhar prioridades com lideranças.", "tipo": "Eliminação na fonte", "nivel": "Primário", "responsavelSugerido": "Gestão + RH", "prazoDias": 60, "indicador": "Nº de retrabalhos; clareza de papel na reaplicação" },
+    "confianca_vertical": { "medida": "Comunicação transparente de decisões; rituais de feedback; capacitação de lideranças.", "tipo": "Treinamento + processo", "nivel": "Secundário", "responsavelSugerido": "Diretoria + RH", "prazoDias": 180, "indicador": "Pulso de clima trimestral; escore de confiança" },
+    "burnout": { "medida": "Monitorar afastamentos e absenteísmo; ações de bem-estar; reavaliação COPSOQ em 6 meses.", "tipo": "Monitoramento (efeito)", "nivel": "Terciário", "responsavelSugerido": "SESMT + RH", "prazoDias": 180, "indicador": "Afastamentos CID F; absenteísmo; escores de saúde" },
+    "_default": { "medida": "Definir medida de controle específica conforme a hierarquia (eliminar > substituir > administrativo > treinamento).", "tipo": "A definir", "nivel": "A definir", "responsavelSugerido": "RH", "prazoDias": 120, "indicador": "Escore da dimensão na reaplicação" }
+  }
+}

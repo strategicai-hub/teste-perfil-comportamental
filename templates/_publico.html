@@ -1,0 +1,37 @@
+{# Layout das páginas públicas do convite NR-1: sem sidebar, sem sessão. #}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Teste da NR-1 — Strategic AI{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ base_path }}/assets/favicon-sai.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ base_path }}/static/style.css">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    [x-cloak] { display: none !important; }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-gray-50 text-slate-800">
+  <header class="border-b border-gray-200 bg-white">
+    <div class="mx-auto flex max-w-3xl items-center px-4 py-3">
+      <img src="{{ base_path }}/assets/logo-sai.png" alt="Strategic AI" class="h-9 w-auto">
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-4 py-8 sm:py-12">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="mx-auto max-w-3xl px-4 pb-10 text-center text-xs text-slate-400">
+    Strategic AI — Avaliação de riscos psicossociais (NR-1)
+  </footer>
+  {% block body_end %}{% endblock %}
+</body>
+</html>

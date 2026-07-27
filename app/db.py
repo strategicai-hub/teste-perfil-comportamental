@@ -61,6 +61,50 @@ class CompanyArea(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Campaign(Base):
+    """Ciclo de avaliação NR-1 de uma empresa.
+
+    O gestor sobe a planilha de colaboradores e define a data de fim; `inicio` é
+    carimbado automaticamente no envio dos convites. Não há job de encerramento:
+    a campanha está aberta enquanto `datetime.utcnow() < fim` (ver `esta_aberta`).
+    """
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    test_id: Mapped[int] = mapped_column(Integer, default=11)
+    titulo: Mapped[str] = mapped_column(String(200), default="")
+    inicio: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    fim: Mapped[datetime] = mapped_column(DateTime)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    invites: Mapped[list["CampaignInvite"]] = relationship(cascade="all, delete-orphan")
+
+    @property
+    def esta_aberta(self) -> bool:
+        return datetime.utcnow() < self.fim
+
+
+class CampaignInvite(Base):
+    """Convite individual: o `token` é o link único que o colaborador recebe."""
+
+    __tablename__ = "campaign_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    nome: Mapped[str] = mapped_column(String(160))
+    email: Mapped[str] = mapped_column(String(200), index=True)
+    area: Mapped[str] = mapped_column(String(160), default="")
+    enviado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    erro_envio: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    respondido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lead_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Lead(Base):
     __tablename__ = "leads"
 
@@ -84,6 +128,9 @@ class Lead(Base):
     # Contexto organizacional (testes de empresa, ex.: COPSOQ).
     company_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), nullable=True, index=True)
     area: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # Campanha NR-1 de origem. Preenchido quando a resposta vem de um convite por
+    # e-mail (nesse caso `user_id` fica NULL — o respondente não tem conta).
+    campaign_id: Mapped[str | None] = mapped_column(ForeignKey("campaigns.id"), nullable=True, index=True)
 
     answers: Mapped[list["Answer"]] = relationship(cascade="all, delete-orphan")
     messages: Mapped[list["ChatMessage"]] = relationship(cascade="all, delete-orphan")
@@ -152,6 +199,8 @@ def _migrate_leads_columns():
             conn.execute(text("ALTER TABLE leads ADD COLUMN company_id VARCHAR(64)"))
         if "area" not in cols:
             conn.execute(text("ALTER TABLE leads ADD COLUMN area VARCHAR(160)"))
+        if "campaign_id" not in cols:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN campaign_id VARCHAR(64)"))
 
 
 def seed_super_admin():

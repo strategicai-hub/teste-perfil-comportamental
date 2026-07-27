@@ -1,0 +1,47 @@
+{# Panorama de resultados: barras com marcadores de tercil, agrupadas nos 8 itens macro. #}
+{% set blocos = agg | panorama %}
+<div class="space-y-8">
+  {% for bloco in blocos %}
+  <section>
+    <div class="flex items-center gap-3 mb-3">
+      <h3 class="text-base font-bold" style="color:#0e7c72">{{ bloco.numero }}. {{ bloco.nome }}</h3>
+      <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+            style="color: {{ nivel_cor.get(bloco.nivel, '#64748b') }}; background: {{ nivel_cor.get(bloco.nivel, '#64748b') }}1f;">
+        {{ bloco.nivel_label }}
+      </span>
+    </div>
+
+    <div class="space-y-3.5">
+      {% for ind in bloco.indicadores %}
+      <div class="grid grid-cols-12 items-center gap-3">
+        <div class="col-span-12 sm:col-span-4">
+          <div class="text-sm text-slate-800 leading-tight">{{ ind.nome }}</div>
+          <div class="text-[11px] text-slate-400">{{ ind.direcao_label }}</div>
+        </div>
+
+        <div class="col-span-8 sm:col-span-5">
+          {# Trilho com marcadores de tercil em 33% e 66% #}
+          <div class="relative h-3.5 rounded-full overflow-hidden" style="background:#eef2f1">
+            <div class="absolute inset-y-0 left-0 rounded-full"
+                 style="width: {{ ind.escore }}%; background: {{ nivel_cor.get(ind.nivel, '#94a3b8') }};"></div>
+            <span class="absolute inset-y-0" style="left:33.3%; width:1px; background:#ffffff"></span>
+            <span class="absolute inset-y-0" style="left:66.6%; width:1px; background:#ffffff"></span>
+          </div>
+        </div>
+
+        <div class="col-span-2 sm:col-span-1 text-right">
+          <span class="text-sm font-bold" style="color: {{ nivel_cor.get(ind.nivel, '#64748b') }}">{{ ind.escore }}</span>
+        </div>
+
+        <div class="col-span-2 text-right">
+          <span class="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                style="color: {{ nivel_cor.get(ind.nivel, '#64748b') }}; border:1px solid {{ nivel_cor.get(ind.nivel, '#64748b') }}55;">
+            {{ ind.nivel_label }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
