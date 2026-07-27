@@ -36,6 +36,7 @@ from app.db import (  # noqa: E402
     Company,
     CompanyArea,
     Lead,
+    User,
     get_session,
     init_db,
 )
@@ -43,6 +44,9 @@ from app.tests_engine import COPSOQ_TEST_ID  # noqa: E402
 
 SEED = 42
 EMAIL_DOMINIO = "demo.local"
+# Domínios já usados por dados de demonstração — todos são limpos antes de recriar.
+# `fake.local` é o legado da primeira leva de 10 respondentes.
+DOMINIOS_DEMO = (EMAIL_DOMINIO, "fake.local")
 
 # Alvo em escala de RISCO (0-100; maior = pior). O escoreamento reorienta pela
 # direção da subescala, então isto vale igual para demandas e recursos.
@@ -115,16 +119,25 @@ def _respostas_do_respondente(rnd: random.Random, offset: int) -> dict[str, str]
     return respostas
 
 
+def _e_demo(email: str | None) -> bool:
+    return bool(email) and email.lower().endswith(tuple(f"@{d}" for d in DOMINIOS_DEMO))
+
+
 def _limpar_demo(s, company_id: str) -> int:
-    """Remove leads, respostas, convites e campanhas de demonstração anteriores."""
-    leads = (
-        s.query(Lead)
-        .filter(Lead.company_id == company_id, Lead.email.like(f"%@{EMAIL_DOMINIO}"))
-        .all()
-    )
+    """Remove leads, respostas, usuários, convites e campanhas de demonstração anteriores."""
+    leads = [
+        l for l in s.query(Lead).filter(Lead.company_id == company_id).all()
+        if _e_demo(l.email)
+    ]
+    user_ids = {l.user_id for l in leads if l.user_id}
     for lead in leads:
         s.query(Answer).filter(Answer.token == lead.token).delete(synchronize_session=False)
         s.delete(lead)
+
+    # Usuários criados só para a demonstração (levas antigas os criavam de verdade).
+    for user in s.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []:
+        if _e_demo(user.email):
+            s.delete(user)
 
     campanhas = (
         s.query(Campaign)
@@ -219,11 +232,10 @@ def seed(slug: str) -> None:
 def _relatar(company_id: str, company_nome: str) -> None:
     """Confere que o agregado realmente cobre os três status."""
     with get_session() as s:
-        leads = (
-            s.query(Lead)
-            .filter(Lead.company_id == company_id, Lead.email.like(f"%@{EMAIL_DOMINIO}"))
-            .all()
-        )
+        leads = [
+            l for l in s.query(Lead).filter(Lead.company_id == company_id).all()
+            if _e_demo(l.email)
+        ]
         resultados = [json.loads(l.result_json) for l in leads if l.result_json]
 
     agg = copsoq_scoring.aggregate(resultados)
