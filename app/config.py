@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     uazapi_instance: str = ""
     alert_phone: str = ""
 
+    # ASAAS — a mesma conta usada pelo SAI COMERCIAL. Default `sandbox` de propósito:
+    # subir sem configurar não pode cobrar ninguém de verdade. Os valores gravados em
+    # AppSetting (tela de Integrações) vencem estes, para trocar sem redeploy.
+    asaas_api_key: str = ""
+    asaas_env: str = "sandbox"
+    asaas_webhook_token: str = ""
+
     admin_user: str = ""
     admin_pass: str = ""
     # Super admin — login pela tela inicial. Só este e-mail entra no /admin.

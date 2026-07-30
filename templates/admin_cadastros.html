@@ -1,0 +1,80 @@
+{% extends "_shell.html" %}
+{% block title %}Cadastros em análise — Admin{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Cadastros em análise</h1>
+    <p class="text-sm text-slate-600 mt-1">
+      Consultorias e empresas que vieram pelo link geral. Empresa que se cadastrou pelo link
+      de um consultor é liberada por ele.
+    </p>
+  </div>
+
+  {% if ok %}<div class="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>{% endif %}
+
+  {% for c in pendentes %}
+  <div class="card p-5" x-data="{ semCobranca: false }">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 class="text-lg font-semibold text-slate-900">{{ c.nome }}</h2>
+          <span class="rounded-full px-2 py-0.5 text-xs font-semibold
+                       {{ 'bg-indigo-50 text-indigo-700' if c.consultoria else 'bg-slate-100 text-slate-600' }}">
+            {{ 'Consultoria' if c.consultoria else 'Empresa' }}
+          </span>
+        </div>
+        <p class="mt-1 text-sm text-slate-600">{{ c.manager_email }}</p>
+        <p class="mt-0.5 text-xs text-slate-500">
+          CPF/CNPJ {{ c.cpf_cnpj or '—' }} · cadastrado em {{ c.criado_em }}
+          {% if c.signup_ip %} · IP {{ c.signup_ip }}{% endif %}
+        </p>
+      </div>
+      <form method="POST" action="{{ base_path }}/admin/cadastros/{{ c.id }}/recusar"
+            onsubmit="return confirm('Recusar o cadastro de {{ c.nome }}?');">
+        <button class="text-sm text-red-600 hover:text-red-800">Recusar</button>
+      </form>
+    </div>
+
+    <form method="POST" action="{{ base_path }}/admin/cadastros/{{ c.id }}/aprovar"
+          class="mt-4 space-y-3 border-t border-slate-100 pt-4">
+      <label class="flex items-start gap-2.5">
+        <input type="checkbox" name="sem_cobranca" value="1" x-model="semCobranca" class="mt-0.5 h-4 w-4">
+        <span>
+          <span class="block text-sm font-medium text-slate-800">Liberar sem cobrança</span>
+          <span class="block text-xs text-slate-500">
+            Nada é criado no ASAAS e este cadastro nunca é bloqueado. Dá para começar a cobrar depois.
+          </span>
+        </span>
+      </label>
+
+      <div x-show="!semCobranca" class="grid gap-3 sm:grid-cols-2">
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-slate-600">Plano</span>
+          <select name="plan_id" class="input py-2">
+            {% for p in (planos_consultoria if c.consultoria else planos_empresa) %}
+            <option value="{{ p.id }}" {% if p.id == c.plan_id %}selected{% endif %}>
+              {{ p.nome }} — {{ p.valor_centavos | brl }} / {{ p.ciclo_label | lower }}
+            </option>
+            {% else %}
+            <option value="">Nenhum plano ativo — cadastre um em Planos</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-slate-600">1ª fatura vence em</span>
+          <input type="date" name="primeira_fatura" min="{{ hoje }}" value="{{ vencimento_padrao }}" class="input py-2">
+          <span class="mt-1 block text-xs text-slate-500">Adie esta data para dar um período de cortesia.</span>
+        </label>
+      </div>
+
+      <button class="btn-primary px-5">Aprovar cadastro</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="card p-10 text-center">
+    <p class="text-slate-500">Nenhum cadastro aguardando sua análise.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

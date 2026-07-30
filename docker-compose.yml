@@ -18,6 +18,9 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - SMTP_FROM=${SMTP_FROM}
+      - ASAAS_API_KEY=${ASAAS_API_KEY}
+      - ASAAS_ENV=${ASAAS_ENV:-sandbox}
+      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
       - UAZAPI_BASE_URL=${UAZAPI_BASE_URL}
       - UAZAPI_TOKEN=${UAZAPI_TOKEN}
       - UAZAPI_INSTANCE=${UAZAPI_INSTANCE}
@@ -31,6 +34,9 @@ services:
     volumes:
       - perfil_data:/data
     deploy:
+      # replicas: 1 é requisito, não preferência: a conferência periódica das
+      # cobranças no ASAAS (billing.reconciliar) e o rate limit do cadastro público
+      # vivem em memória do processo. Com 2 réplicas ambos rodariam em dobro.
       replicas: 1
       restart_policy:
         condition: any

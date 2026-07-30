@@ -216,6 +216,82 @@ def send_invite_email(to: str, nome: str, empresa: str, prazo: str, link: str) -
         smtp.send_message(msg)
 
 
+def _reengagement_html(nome: str, empresa: str, prazo: str, link: str) -> str:
+    return f"""\
+<!DOCTYPE html>
+<html lang="pt-br">
+<head><meta charset="utf-8"><title>Faltou você no teste da NR-1</title></head>
+<body style="font-family: Arial, Helvetica, sans-serif; background:#f5f7fa; margin:0; padding:24px;">
+  <div style="max-width:560px; margin:0 auto; background:#ffffff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <h1 style="color:#0f766e; margin:0 0 16px 0; font-size:22px;">{nome}, faltou você.</h1>
+
+    <p style="color:#334155; line-height:1.6; margin:0 0 16px 0;">
+      Seus colegas da <strong>{empresa}</strong> já responderam a avaliação de saúde e
+      bem-estar no trabalho exigida pela <strong>NR-1</strong>. Sua resposta ainda não chegou.
+    </p>
+
+    <p style="color:#334155; line-height:1.6; margin:0 0 16px 0;">
+      São cerca de <strong>15 minutos</strong>, e ninguém da empresa vê a sua resposta
+      individual — só o resultado do grupo.
+    </p>
+
+    <div style="background:#fffbeb; border-left:4px solid #d97706; padding:12px 16px; margin:0 0 24px 0;">
+      <p style="color:#92400e; margin:0; font-weight:700;">O prazo termina em {prazo}.</p>
+    </div>
+
+    <p style="text-align:center; margin:0 0 24px 0;">
+      <a href="{link}" style="display:inline-block; background:#0f766e; color:#fff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:700;">
+        Responder agora
+      </a>
+    </p>
+
+    <p style="color:#64748b; font-size:13px; line-height:1.6; margin:0;">
+      Se o botão não funcionar, copie e cole este endereço no seu navegador:<br>
+      <a href="{link}" style="color:#0f766e; word-break:break-all;">{link}</a>
+    </p>
+
+    <p style="color:#94a3b8; font-size:12px; margin-top:28px;">Strategic AI — Riscos Psicossociais (NR-1)</p>
+  </div>
+</body>
+</html>"""
+
+
+def send_reengagement_email(to: str, nome: str, empresa: str, prazo: str, link: str) -> None:
+    """Lembrete para quem recebeu o convite e ainda não respondeu.
+
+    É um e-mail próprio, não o convite repetido: o assunto e o texto mudam para não
+    parecer duplicata (o que aumenta a chance de ir para spam e de ser ignorado).
+    Levanta em caso de falha — o chamador registra em `CampaignInvite.erro_envio`.
+    """
+    if not settings.smtp_host or not settings.smtp_user:
+        raise RuntimeError("SMTP não configurado")
+
+    primeiro_nome = (nome or "").split()[0] if nome else ""
+
+    msg = EmailMessage()
+    msg["Subject"] = f"{primeiro_nome}, ainda dá tempo de responder o teste da NR-1"
+    msg["From"] = settings.smtp_from or settings.smtp_user
+    msg["To"] = to
+    msg.set_content(
+        f"{primeiro_nome}, faltou você.\n\n"
+        f"Seus colegas da {empresa} já responderam a avaliação de saúde e bem-estar no "
+        f"trabalho exigida pela NR-1. Sua resposta ainda não chegou.\n\n"
+        f"São cerca de 15 minutos, e ninguém da empresa vê a sua resposta individual — "
+        f"só o resultado do grupo.\n\n"
+        f"O prazo termina em {prazo}.\n\n"
+        f"Responda aqui: {link}\n\n"
+        f"Strategic AI — Riscos Psicossociais (NR-1)"
+    )
+    msg.add_alternative(
+        _reengagement_html(primeiro_nome, empresa, prazo, link), subtype="html"
+    )
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        smtp.starttls()
+        smtp.login(settings.smtp_user, settings.smtp_pass)
+        smtp.send_message(msg)
+
+
 def _reset_html(nome: str, link: str) -> str:
     return f"""\
 <!DOCTYPE html>

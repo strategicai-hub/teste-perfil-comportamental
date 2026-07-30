@@ -1,5 +1,15 @@
 from datetime import datetime
-from sqlalchemy import create_engine, String, Integer, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from .config import settings
@@ -40,7 +50,29 @@ class PasswordResetToken(Base):
 
 
 class Company(Base):
+    """Tenant do sistema — pode ser uma **empresa** (cliente final) ou uma **consultoria**.
+
+    A consultoria é um tenant como qualquer outro: os usuários dela têm
+    `User.tenant_id` apontando para cá com `role='consultant'`, e as empresas que ela
+    trouxe têm `parent_id` preenchido. Modelar assim (em vez de um FK para um User)
+    é o que permite cobrar consultoria e empresa pelo mesmo caminho (`Charge.company_id`)
+    e reaproveitar a impersonation existente.
+    """
+
     __tablename__ = "companies"
+
+    KIND_EMPRESA = "empresa"
+    KIND_CONSULTORIA = "consultoria"
+
+    STATUS_PENDENTE = "pending"
+    STATUS_ATIVO = "ativo"
+    STATUS_RECUSADO = "recusado"
+    STATUS_SUSPENSO = "suspenso"
+
+    # Quem paga a conta deste tenant.
+    BILLING_PROPRIO = "proprio"          # assinatura própria no ASAAS
+    BILLING_CONSULTOR = "pelo_consultor"  # coberto pela assinatura da consultoria dona
+    BILLING_ISENTO = "isento"             # liberado sem cobrança (nunca bloqueia)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     nome: Mapped[str] = mapped_column(String(200))
@@ -49,7 +81,28 @@ class Company(Base):
     manager_password_hash: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    kind: Mapped[str] = mapped_column(String(16), default=KIND_EMPRESA, index=True)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("companies.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), default=STATUS_PENDENTE, index=True)
+    cpf_cnpj: Mapped[str] = mapped_column(String(20), default="")
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"), nullable=True)
+    billing_mode: Mapped[str] = mapped_column(String(20), default=BILLING_PROPRIO)
+    asaas_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    asaas_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    asaas_erro: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    signup_ip: Mapped[str] = mapped_column(String(64), default="")
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     areas: Mapped[list["CompanyArea"]] = relationship(cascade="all, delete-orphan")
+
+    @property
+    def e_consultoria(self) -> bool:
+        return self.kind == self.KIND_CONSULTORIA
+
+    @property
+    def ativo(self) -> bool:
+        return (self.status or self.STATUS_ATIVO) == self.STATUS_ATIVO
 
 
 class CompanyArea(Base):
@@ -102,7 +155,15 @@ class CampaignInvite(Base):
     erro_envio: Mapped[str | None] = mapped_column(String(300), nullable=True)
     respondido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     lead_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Último reengajamento enviado. Fica separado de `enviado_em` porque este é a prova
+    # de que a pessoa recebeu o link — base do percentual de adesão. Zerar `enviado_em`
+    # para reenviar (como era antes) apagava exatamente esse dado.
+    reengajado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def recebeu(self) -> bool:
+        return self.enviado_em is not None and not self.erro_envio
 
 
 class Lead(Base):
@@ -155,6 +216,101 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Plan(Base):
+    """Plano de assinatura, editável no painel do super admin (sem deploy)."""
+
+    __tablename__ = "plans"
+
+    TIPO_EMPRESA = "empresa"
+    TIPO_CONSULTORIA = "consultoria"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nome: Mapped[str] = mapped_column(String(120))
+    # Dinheiro sempre em centavos: Float em SQLite arredonda e vira diferença de caixa.
+    valor_centavos: Mapped[int] = mapped_column(Integer, default=0)
+    ciclo: Mapped[str] = mapped_column(String(16), default="MONTHLY")
+    tipo: Mapped[str] = mapped_column(String(16), default=TIPO_EMPRESA, index=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Charge(Base):
+    """Cobrança espelhada do ASAAS. `company_id` é sempre o **pagador**."""
+
+    __tablename__ = "charges"
+
+    PENDING = "PENDING"
+    RECEIVED = "RECEIVED"
+    CONFIRMED = "CONFIRMED"
+    OVERDUE = "OVERDUE"
+    REFUNDED = "REFUNDED"
+    DELETED = "DELETED"
+
+    ABERTOS = (PENDING, OVERDUE)
+    PAGOS = (RECEIVED, CONFIRMED)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    asaas_payment_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    descricao: Mapped[str] = mapped_column(String(200), default="")
+    valor_centavos: Mapped[int] = mapped_column(Integer, default=0)
+    net_centavos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    due_date: Mapped[datetime] = mapped_column(DateTime, index=True)
+    payment_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default=PENDING, index=True)
+    billing_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    invoice_url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    bank_slip_url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_charges_company_status", "company_id", "status"),
+        Index("ix_charges_company_due", "company_id", "due_date"),
+    )
+
+    @property
+    def em_aberto(self) -> bool:
+        return self.status in self.ABERTOS
+
+    @property
+    def pago(self) -> bool:
+        return self.status in self.PAGOS
+
+
+class WebhookEvent(Base):
+    """Log de eventos recebidos. A unique tripla é o que garante idempotência:
+    o ASAAS reentregar o mesmo evento não pode gerar cobrança duplicada."""
+
+    __tablename__ = "webhook_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(20), default="asaas")
+    external_id: Mapped[str] = mapped_column(String(64), index=True)
+    event_type: Mapped[str] = mapped_column(String(60))
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", "event_type", name="uq_webhook_event"),
+    )
+
+
+class AppSetting(Base):
+    """Config de runtime (token/ambiente do ASAAS). Vence o `.env` para permitir
+    trocar de conta ou de sandbox↔produção sem redeploy."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -163,9 +319,12 @@ def init_db():
     Base.metadata.create_all(engine)
     _migrate_users_columns()
     _migrate_leads_columns()
+    _migrate_companies_columns()
+    _migrate_campaign_invites_columns()
     seed_super_admin()
     migrate_company_managers()
     backfill_member_tenants()
+    seed_planos_padrao()
 
 
 def _migrate_users_columns():
@@ -201,6 +360,76 @@ def _migrate_leads_columns():
             conn.execute(text("ALTER TABLE leads ADD COLUMN area VARCHAR(160)"))
         if "campaign_id" not in cols:
             conn.execute(text("ALTER TABLE leads ADD COLUMN campaign_id VARCHAR(64)"))
+
+
+def _migrate_companies_columns():
+    """Colunas de hierarquia e cobrança em `companies`.
+
+    O backfill é parte inseparável da migração: o default do model é
+    `status='pending'`, então sem o UPDATE toda empresa que já existe cairia em
+    "cadastro em análise" no primeiro boot. Idem `billing_mode='isento'` — cliente
+    antigo não passa a ser cobrado (nem bloqueado) por efeito colateral do deploy.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "companies" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("companies")}
+    novas = {
+        "kind": "VARCHAR(16)",
+        "parent_id": "VARCHAR(64)",
+        "status": "VARCHAR(16)",
+        "cpf_cnpj": "VARCHAR(20)",
+        "plan_id": "INTEGER",
+        "billing_mode": "VARCHAR(20)",
+        "asaas_customer_id": "VARCHAR(64)",
+        "asaas_subscription_id": "VARCHAR(64)",
+        "asaas_erro": "VARCHAR(300)",
+        "signup_ip": "VARCHAR(64)",
+        "approved_at": "DATETIME",
+        "approved_by": "VARCHAR(64)",
+    }
+    with engine.begin() as conn:
+        for nome, tipo in novas.items():
+            if nome not in cols:
+                # SQLite não aceita UNIQUE nem default não-constante em ADD COLUMN.
+                conn.execute(text(f"ALTER TABLE companies ADD COLUMN {nome} {tipo}"))
+        conn.execute(text("UPDATE companies SET kind='empresa' WHERE kind IS NULL OR kind=''"))
+        conn.execute(text("UPDATE companies SET status='ativo' WHERE status IS NULL OR status=''"))
+        conn.execute(text("UPDATE companies SET cpf_cnpj='' WHERE cpf_cnpj IS NULL"))
+        conn.execute(text("UPDATE companies SET signup_ip='' WHERE signup_ip IS NULL"))
+        conn.execute(
+            text("UPDATE companies SET billing_mode='isento' WHERE billing_mode IS NULL OR billing_mode=''")
+        )
+
+
+def _migrate_campaign_invites_columns():
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "campaign_invites" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("campaign_invites")}
+    with engine.begin() as conn:
+        if "reengajado_em" not in cols:
+            conn.execute(text("ALTER TABLE campaign_invites ADD COLUMN reengajado_em DATETIME"))
+
+
+def seed_planos_padrao():
+    """Cria planos iniciais só se a tabela estiver vazia (o owner edita depois no painel)."""
+    with get_session() as s:
+        if s.query(Plan).count() > 0:
+            return
+        s.add_all([
+            Plan(nome="NR-1 Essencial", valor_centavos=19700, tipo=Plan.TIPO_EMPRESA, ordem=1),
+            Plan(nome="NR-1 Pro", valor_centavos=39700, tipo=Plan.TIPO_EMPRESA, ordem=2),
+            Plan(nome="Consultoria", valor_centavos=59700, tipo=Plan.TIPO_CONSULTORIA, ordem=1),
+        ])
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
 
 
 def seed_super_admin():
@@ -256,6 +485,10 @@ def migrate_company_managers():
     - User comum sem tenant → promove a admin do tenant (mantém a senha própria);
     - User já em OUTRO tenant → conflito (1 e-mail = 1 tenant), pula e loga;
     - não existe → cria admin reaproveitando o bcrypt de manager_password_hash.
+
+    NÃO toca em tenant fora do status 'ativo': um cadastro público ainda em análise
+    não pode ganhar gestor liberado, e esta função reescreve `password_hash` — o que
+    sobrescreveria a senha que a pessoa acabou de escolher no wizard.
     """
     import logging
     import uuid
@@ -265,6 +498,8 @@ def migrate_company_managers():
     with get_session() as s:
         companies = s.query(Company).all()
         for company in companies:
+            if (company.status or Company.STATUS_ATIVO) != Company.STATUS_ATIVO:
+                continue
             email = (company.manager_email or "").strip().lower()
             if not email:
                 continue

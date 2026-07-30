@@ -1,0 +1,98 @@
+{% extends "_shell.html" %}
+{% block title %}Faturas — {{ company.nome }}{% endblock %}
+
+{# Verde = pago (mostra a data do pagamento). Vermelho = em aberto (mostra o vencimento). #}
+{% macro cartao(f, pago) %}
+<div class="rounded-lg border p-4 {{ 'border-emerald-300 bg-emerald-50' if pago else ('border-red-700 bg-red-50' if f.vencida else 'border-slate-300 bg-white') }}">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="font-semibold {{ 'text-emerald-900' if pago else 'text-slate-900' }}">{{ f.descricao }}</p>
+      <p class="mt-0.5 text-sm {{ 'text-emerald-800' if pago else ('text-red-800' if f.vencida else 'text-slate-600') }}">
+        {% if pago %}Pago em <strong>{{ f.pagamento | data_br or '—' }}</strong>
+        {% elif f.vencida %}Venceu em <strong>{{ f.vencimento | data_br }}</strong>
+        {% else %}Vence em <strong>{{ f.vencimento | data_br }}</strong>{% endif %}
+      </p>
+    </div>
+    <p class="text-xl font-bold {{ 'text-emerald-900' if pago else 'text-slate-900' }}">{{ f.valor_centavos | brl }}</p>
+  </div>
+
+  {% if not pago and not somente_leitura %}
+  <form method="POST" action="{{ base_path }}/faturas/{{ f.id }}/link" class="mt-3">
+    <button class="w-full rounded-lg bg-red-700 py-2.5 text-sm font-semibold text-white hover:bg-red-800"
+            style="min-height:44px">
+      Pagar agora (boleto, PIX ou cartão)
+    </button>
+  </form>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="mx-auto max-w-3xl space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Faturas</h1>
+    <p class="text-sm text-slate-600 mt-1">{{ company.nome }}</p>
+  </div>
+
+  {% if ok %}<div class="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>{% endif %}
+
+  {% if acesso and acesso.bloqueado and acesso.motivo == 'inadimplente' %}
+  <div class="rounded-lg border border-red-700 bg-red-50 px-4 py-3 text-sm text-red-900">
+    O acesso ao sistema está suspenso por causa da fatura em atraso. Depois do pagamento, a
+    liberação é automática — pode levar alguns minutos.
+  </div>
+  {% endif %}
+
+  {% if coberto_por %}
+  <div class="card p-6 text-center">
+    <p class="text-slate-700">
+      A mensalidade desta empresa é paga por <strong>{{ coberto_por }}</strong>.
+    </p>
+    <p class="mt-2 text-sm text-slate-500">Você não tem faturas para acompanhar aqui.</p>
+  </div>
+
+  {% else %}
+    {% if plano or isento %}
+    <div class="card p-5">
+      <h2 class="text-sm font-semibold text-slate-700 mb-1">Seu plano</h2>
+      {% if isento %}
+      <p class="text-sm text-slate-600">Acesso liberado <strong>sem cobrança</strong>.</p>
+      {% else %}
+      <p class="text-sm text-slate-600">
+        <strong>{{ plano.nome }}</strong> — {{ plano.valor_centavos | brl }}
+        {{ 'por mês' if plano.ciclo == 'MONTHLY' else 'por ano' }}
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if abertas %}
+    <div>
+      <h2 class="mb-3 text-sm font-semibold text-slate-700">Em aberto</h2>
+      <div class="space-y-3">
+        {% for f in abertas %}{{ cartao(f, false) }}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if pagas %}
+    <div>
+      <h2 class="mb-3 text-sm font-semibold text-slate-700">Pagas</h2>
+      <div class="space-y-3">
+        {% for f in pagas %}{{ cartao(f, true) }}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not abertas and not pagas %}
+    <div class="card p-10 text-center">
+      <p class="text-slate-500">
+        {% if isento %}Nenhuma cobrança — seu acesso é sem custo.
+        {% else %}Nenhuma fatura por aqui ainda. A primeira aparece quando a assinatura é gerada.{% endif %}
+      </p>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

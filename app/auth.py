@@ -15,9 +15,10 @@ JWT_COOKIE = "tpc_session"
 # num tenant. Nunca reescrevemos o tpc_session — impersonation é uma camada acima.
 IMPERSONATE_COOKIE = "tpc_impersonate"
 
-SUPER_ADMIN = "super_admin"
-ADMIN = "admin"
-MEMBER = "member"
+SUPER_ADMIN = "super_admin"   # o owner — vê consultorias e empresas
+CONSULTANT = "consultant"     # consultor — vê só as empresas trazidas por ele
+ADMIN = "admin"               # gestor da empresa
+MEMBER = "member"             # colaborador
 
 
 def hash_password(password: str) -> str:
@@ -103,40 +104,87 @@ def require_admin_or_super(request: Request) -> User:
 
 
 # ---------------------------------------------------------------------------
-# Impersonation — super admin "entra" num tenant
+# Impersonation — o owner "entra" numa consultoria e dela numa empresa;
+# o consultor entra nas empresas dele. O cookie guarda a TRILHA, não um id só:
+# sem isso, entrar na empresa a partir da consultoria apagaria o caminho de volta.
 # ---------------------------------------------------------------------------
-def make_impersonation_token(tenant_id: str) -> str:
+def make_impersonation_token(trilha: list[str]) -> str:
     return jwt.encode(
-        {"imp": tenant_id, "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"imp": list(trilha), "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret,
         algorithm=JWT_ALG,
     )
 
 
-def decode_impersonation_token(token: str) -> str | None:
+def decode_impersonation_token(token: str) -> list[str]:
+    """Aceita o formato novo (lista) e o legado (string) — cookies já emitidos valem."""
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALG])
-        return payload.get("imp")
     except jwt.PyJWTError:
-        return None
+        return []
+    imp = payload.get("imp")
+    if isinstance(imp, str):
+        return [imp] if imp else []
+    if isinstance(imp, list):
+        return [t for t in imp if isinstance(t, str) and t]
+    return []
+
+
+def pode_impersonar(user: User, company: Company) -> bool:
+    """Regra de quem pode entrar em qual tenant.
+
+    - owner: qualquer tenant;
+    - consultor: só empresas cujo `parent_id` é a consultoria dele;
+    - resto: ninguém (defesa contra cookie forjado).
+    """
+    if company is None:
+        return False
+    if user.role == SUPER_ADMIN:
+        return True
+    if user.role == CONSULTANT:
+        return (
+            bool(user.tenant_id)
+            and company.parent_id == user.tenant_id
+            and company.kind == Company.KIND_EMPRESA
+        )
+    return False
+
+
+def trilha_impersonation(request: Request, user: User) -> list[Company]:
+    """Trilha válida do cookie, revalidada no banco a cada request.
+
+    Cada elo tem de ser filho do anterior — uma trilha forjada com dois tenants sem
+    parentesco é truncada no primeiro elo inválido.
+    """
+    if user.role not in (SUPER_ADMIN, CONSULTANT):
+        return []
+    token = request.cookies.get(IMPERSONATE_COOKIE)
+    if not token:
+        return []
+    ids = decode_impersonation_token(token)
+    if not ids:
+        return []
+    validos: list[Company] = []
+    with get_session() as s:
+        for tid in ids:
+            company = s.get(Company, tid)
+            if company is None:
+                break
+            if not validos:
+                if not pode_impersonar(user, company):
+                    break
+            elif company.parent_id != validos[-1].id:
+                break
+            s.expunge(company)
+            validos.append(company)
+    return validos
 
 
 def get_effective_tenant_id(request: Request, user: User) -> str | None:
-    """Tenant que o usuário está enxergando.
-
-    Só o super admin pode impersonar; qualquer outro papel ignora o cookie de
-    impersonation (defesa contra cookie forjado/rebaixamento). O tenant do cookie
-    é validado contra o banco a cada request.
-    """
-    if user.role != SUPER_ADMIN:
-        return user.tenant_id
-    token = request.cookies.get(IMPERSONATE_COOKIE)
-    if token:
-        tid = decode_impersonation_token(token)
-        if tid:
-            with get_session() as s:
-                if s.get(Company, tid) is not None:
-                    return tid
+    """Tenant que o usuário está enxergando: o último elo válido da trilha, ou o dele."""
+    trilha = trilha_impersonation(request, user)
+    if trilha:
+        return trilha[-1].id
     return user.tenant_id
 
 

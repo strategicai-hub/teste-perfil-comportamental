@@ -1,0 +1,55 @@
+{% extends "_auth.html" %}
+{% block title %}{% if recusado %}Cadastro não aprovado{% else %}Cadastro em análise{% endif %} — Strategic AI{% endblock %}
+{% block width %}max-w-md{% endblock %}
+
+{% block card %}
+{% if recusado %}
+<div class="text-center">
+  <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+    <svg class="h-7 w-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </div>
+  <h1 class="mt-5 text-xl font-bold text-slate-900">Cadastro não aprovado</h1>
+  <p class="mt-3 text-sm text-slate-600 leading-relaxed">
+    O cadastro de <strong>{{ nome }}</strong> não foi aprovado.
+    {% if consultoria %}Fale com {{ consultoria }} para entender o motivo.
+    {% else %}Se achar que houve um engano, responda o e-mail que você recebeu.{% endif %}
+  </p>
+</div>
+
+{% else %}
+<div class="text-center">
+  <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-50">
+    <svg class="h-7 w-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+  </div>
+  <h1 class="mt-5 text-xl font-bold text-slate-900">
+    {% if acabou_de_enviar %}Cadastro enviado!{% else %}Seu cadastro está em análise{% endif %}
+  </h1>
+  <p class="mt-3 text-sm text-slate-600 leading-relaxed">
+    Recebemos o cadastro de <strong>{{ nome }}</strong>.
+    {% if consultoria %}
+      {{ consultoria }} vai liberar seu acesso.
+    {% else %}
+      Nossa equipe vai conferir os dados e liberar seu acesso.
+    {% endif %}
+  </p>
+  <p class="mt-3 text-sm text-slate-600">
+    Avisamos em <strong>{{ email }}</strong> assim que estiver liberado. Você pode fechar esta página.
+  </p>
+  <div class="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-left text-xs text-slate-600">
+    Já pode entrar com esse e-mail e senha — enquanto o acesso não é liberado, você cai
+    de volta nesta tela.
+  </div>
+  <a href="{{ base_path }}/cadastro/analise" class="btn-secondary mt-5 inline-block px-5 py-2">Verificar de novo</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block below_card %}
+<form method="POST" action="{{ base_path }}/sair" class="mt-4 text-center">
+  <button class="text-sm text-slate-500 hover:text-slate-700">Sair</button>
+</form>
+{% endblock %}

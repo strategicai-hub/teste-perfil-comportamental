@@ -1,21 +1,29 @@
+import asyncio
 import json
 import logging
-import re
-import unicodedata
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 
-from . import auth, gemini as gemini_client, invites, mailer, notifier, pdf, sheets
+from . import (
+    auth,
+    billing,
+    gemini as gemini_client,
+    invites,
+    mailer,
+    notifier,
+    pdf,
+    plans,
+    queries,
+    sheets,
+)
 from .config import settings
 from .copsoq import report as copsoq_report, scoring as copsoq_scoring
 from .db import (
@@ -27,32 +35,47 @@ from .db import (
     CompanyArea,
     Lead,
     PasswordResetToken,
+    Plan,
     User,
     get_session,
     init_db,
 )
+from .routers import admin_billing, consultor, faturas, publico
 from .tests_engine import COPSOQ_TEST_ID, TESTS, get_engine, get_test, is_empresa_test
+from .web import deps
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-APP_DIR = Path(__file__).parent.parent
-STATIC_DIR = APP_DIR / "static"
-ASSETS_DIR = APP_DIR / "assets"
-TEMPLATES_DIR = APP_DIR / "templates"
+APP_DIR = deps.APP_DIR
+STATIC_DIR = deps.STATIC_DIR
+ASSETS_DIR = deps.ASSETS_DIR
 INDEX_FILE = STATIC_DIR / "index.html"
 FAVICON_FILE = ASSETS_DIR / "favicon-sai.png"
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-templates.env.globals["base_path"] = settings.base_path
-# Paleta e rótulos do semáforo em um lugar só — usados pelo painel e pelo relatório.
-templates.env.globals["nivel_cor"] = copsoq_report.NIVEL_COR
-templates.env.globals["nivel_txt"] = copsoq_report.NIVEL_LABEL
-# Mesma estrutura de blocos alimenta o painel gráfico e o relatório.
-templates.env.filters["panorama"] = copsoq_report.build_report
-
-# Mínimo de respondentes para exibir um recorte (anonimato — NR-1 / dado sensível).
-MIN_RESPONDENTES = 3
+# Helpers e templates vivem em app/web/deps.py e app/queries.py (os routers não podem
+# importar de main). Os aliases abaixo mantêm os nomes que as rotas deste módulo já usam.
+templates = deps.templates
+MIN_RESPONDENTES = deps.MIN_RESPONDENTES
+SP_TZ = deps.SP_TZ
+_slugify = deps.slugify
+_home_for_role = deps.home_for_role
+_shell_user = deps.shell_user
+_shell_ctx = deps.shell_ctx
+_safe_next = deps.safe_next
+_page_user = deps.page_user
+_manager_tenant = deps.manager_tenant
+_fim_do_dia_utc = deps.fim_do_dia_utc
+_para_data_local = deps.para_data_local
+_fmt_data = deps.fmt_data
+_lead_result = queries.lead_result
+_gestor_ids = queries.gestor_ids
+_copsoq_leads = queries.copsoq_leads
+_copsoq_agg_for = queries.copsoq_agg_for
+_company_areas_com_contagem = queries.company_areas_com_contagem
+_campanha_atual = queries.campanha_atual
+_campanha_ctx = queries.campanha_ctx
+_relatorio_secoes = queries.secoes_relatorio
 
 app = FastAPI(title="Strategic AI — Testes Comportamentais")
 
@@ -62,41 +85,38 @@ def _startup():
     init_db()
 
 
+@app.on_event("startup")
+async def _startup_reconciliacao():
+    """Rede de segurança para webhook do ASAAS perdido (ver billing.reconciliar)."""
+    asyncio.create_task(_loop_reconciliacao())
+
+
+async def _loop_reconciliacao():
+    await asyncio.sleep(60)  # deixa o boot e as migrações terminarem
+    while True:
+        try:
+            await run_in_threadpool(billing.reconciliar)
+        except Exception:
+            log.exception("Reconciliação ASAAS falhou")
+        await asyncio.sleep(30 * 60)
+
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
+# Routers registrados ANTES do catch-all /perfil-comportamental/{rest:path} — cada um
+# declara o path completo, sem prefixo, então nenhuma URL existente muda.
+app.include_router(publico.router)
+app.include_router(consultor.router)
+app.include_router(faturas.router)
+app.include_router(admin_billing.router)
+
 
 # =========================================================================
 # HELPERS
 # =========================================================================
-def _slugify(text: str) -> str:
-    norm = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    norm = re.sub(r"[^a-zA-Z0-9]+", "-", norm).strip("-").lower()
-    return norm or "empresa"
-
-
-def _lead_result(lead: Lead) -> dict | None:
-    """Resultado canônico (result_json) de um lead concluído; fallback nas colunas legadas."""
-    if lead.concluido_em is None:
-        return None
-    if lead.result_json:
-        try:
-            return json.loads(lead.result_json)
-        except (ValueError, TypeError):
-            pass
-    return {
-        "type": "archetype",
-        "perc": {
-            "tubarao": lead.perc_tubarao or 0,
-            "lobo": lead.perc_lobo or 0,
-            "aguia": lead.perc_aguia or 0,
-            "gato": lead.perc_gato or 0,
-        },
-    }
-
-
 def _lead_to_dict(lead: Lead) -> dict:
     return {
         "token": lead.token,
@@ -121,38 +141,6 @@ def _history_resumo(lead: Lead) -> dict:
         return {"tipo": "copsoq", "vermelhos": vermelhos, "top_risco": top[0]["nome"] if top else None}
     perc = result.get("perc", {})
     return {"tipo": "archetype", "perc": perc}
-
-
-# =========================================================================
-# SHELL / NAVEGAÇÃO
-# =========================================================================
-_ROLE_LABEL = {auth.SUPER_ADMIN: "Super admin", auth.ADMIN: "Gestor", auth.MEMBER: "Colaborador"}
-
-
-def _home_for_role(role: str) -> str:
-    if role == auth.SUPER_ADMIN:
-        return f"{settings.base_path}/admin"
-    if role == auth.ADMIN:
-        return f"{settings.base_path}/empresa"
-    return f"{settings.base_path}/testes"
-
-
-def _shell_user(user: User, role: str | None = None) -> dict:
-    nome = f"{user.nome} {user.sobrenome}".strip() or user.email
-    r = role or user.role
-    return {"nome": nome, "email": user.email, "role": r, "role_label": _ROLE_LABEL.get(r, r)}
-
-
-def _shell_ctx(user: User, active: str, impersonating: str | None = None, role: str | None = None) -> dict:
-    """Contexto do sidebar/topbar para qualquer página que estenda _shell.html."""
-    return {"shell_user": _shell_user(user, role), "active": active, "impersonating": impersonating}
-
-
-def _safe_next(nxt: str | None) -> str | None:
-    """Só aceita caminho local (evita open redirect)."""
-    if nxt and nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
-        return nxt
-    return None
 
 
 # =========================================================================
@@ -840,12 +828,13 @@ def testes_page(request: Request):
     user, redir = _page_user(request)
     if redir:
         return redir
+    # Os testes comportamentais estão ocultos: nenhum deles tem perguntas prontas, e
+    # exibir cards "Em breve" só gera dúvida no cliente.
     nr1 = [t for t in TESTS if t.get("grupo") == "nr1"]
-    comp = [t for t in TESTS if t.get("grupo") == "comportamental"]
     aviso = user.role == auth.MEMBER and not user.tenant_id
     return templates.TemplateResponse(
         "testes.html",
-        {"request": request, "nr1": nr1, "comportamental": comp, "aviso_sem_empresa": aviso, **_shell_ctx(user, "testes")},
+        {"request": request, "nr1": nr1, "aviso_sem_empresa": aviso, **_shell_ctx(user, "testes")},
     )
 
 
@@ -940,13 +929,20 @@ def resultado_page(token: str, request: Request):
 # =========================================================================
 # RESPONDENTE CONVIDADO (link único por e-mail, sem senha)
 # =========================================================================
-def _invite_ctx(s, invite_token: str) -> tuple[CampaignInvite | None, Campaign | None, Company | None]:
+def _invite_ctx(s, invite_token: str) -> tuple[CampaignInvite | None, Campaign | None, Company | None, bool]:
+    """Contexto do convite + se o acesso da empresa está bloqueado.
+
+    Este é o segundo (e último) ponto de checagem de bloqueio do sistema: o
+    colaborador não tem conta, então o gate de `deps.page_user` não o alcança. Vale
+    para as 3 páginas /nr1/* e as 3 rotas /api/nr1/* (via `_invite_lead`).
+    """
     convite = s.query(CampaignInvite).filter(CampaignInvite.token == invite_token).first()
     if convite is None:
-        return None, None, None
+        return None, None, None, False
     campaign = s.get(Campaign, convite.campaign_id)
     company = s.get(Company, campaign.company_id) if campaign else None
-    return convite, campaign, company
+    bloqueado = billing.acesso(s, company, auth.MEMBER).bloqueado if company else False
+    return convite, campaign, company, bloqueado
 
 
 def _nr1_status_page(request: Request, estado: str, empresa: str = "", prazo: str = "", status_code: int = 200):
@@ -961,10 +957,12 @@ def _nr1_status_page(request: Request, estado: str, empresa: str = "", prazo: st
 @app.get("/nr1/{invite_token}")
 def nr1_intro(invite_token: str, request: Request):
     with get_session() as s:
-        convite, campaign, company = _invite_ctx(s, invite_token)
+        convite, campaign, company, bloqueado = _invite_ctx(s, invite_token)
         if convite is None or campaign is None or company is None:
             return _nr1_status_page(request, "invalido", status_code=404)
         empresa, prazo = company.nome, _fmt_data(campaign.fim)
+        if bloqueado:
+            return _nr1_status_page(request, "indisponivel", empresa, prazo)
         if convite.respondido_em is not None:
             return _nr1_status_page(request, "respondido", empresa, prazo)
         if not campaign.esta_aberta:
@@ -978,9 +976,11 @@ def nr1_intro(invite_token: str, request: Request):
 @app.post("/nr1/{invite_token}/iniciar")
 def nr1_iniciar(invite_token: str, request: Request):
     with get_session() as s:
-        convite, campaign, company = _invite_ctx(s, invite_token)
+        convite, campaign, company, bloqueado = _invite_ctx(s, invite_token)
         if convite is None or campaign is None or company is None:
             return _nr1_status_page(request, "invalido", status_code=404)
+        if bloqueado:
+            return _nr1_status_page(request, "indisponivel", company.nome, _fmt_data(campaign.fim))
         if convite.respondido_em is not None:
             return _nr1_status_page(request, "respondido", company.nome, _fmt_data(campaign.fim))
         if not campaign.esta_aberta:
@@ -1013,9 +1013,11 @@ def nr1_iniciar(invite_token: str, request: Request):
 @app.get("/nr1/{invite_token}/responder")
 def nr1_responder(invite_token: str, request: Request):
     with get_session() as s:
-        convite, campaign, company = _invite_ctx(s, invite_token)
+        convite, campaign, company, bloqueado = _invite_ctx(s, invite_token)
         if convite is None or campaign is None or company is None:
             return _nr1_status_page(request, "invalido", status_code=404)
+        if bloqueado:
+            return _nr1_status_page(request, "indisponivel", company.nome, _fmt_data(campaign.fim))
         if convite.respondido_em is not None:
             return _nr1_status_page(request, "respondido", company.nome, _fmt_data(campaign.fim))
         if not campaign.esta_aberta:
@@ -1035,9 +1037,11 @@ def nr1_responder(invite_token: str, request: Request):
 
 def _invite_lead(s, invite_token: str) -> tuple[CampaignInvite, Campaign, Lead]:
     """Convite ativo + lead em aberto, ou 404/410 explicando o motivo."""
-    convite, campaign, _company = _invite_ctx(s, invite_token)
+    convite, campaign, _company, bloqueado = _invite_ctx(s, invite_token)
     if convite is None or campaign is None:
         raise HTTPException(404, "Link inválido")
+    if bloqueado:
+        raise HTTPException(410, "Este teste está temporariamente indisponível. Fale com o RH da sua empresa.")
     if not campaign.esta_aberta:
         raise HTTPException(410, "O prazo para responder este teste já encerrou.")
     if convite.respondido_em is not None:
@@ -1110,112 +1114,6 @@ def nr1_submit(invite_token: str, data: SubmitIn | None = None):
 # =========================================================================
 # GESTOR DA EMPRESA (painel do cliente)
 # =========================================================================
-def _gestor_ids(s, company_id: str) -> set[str]:
-    """IDs de quem NÃO entra no agregado: gestores e super admins do tenant.
-
-    A resposta do gestor não pode distorcer as médias nem quebrar o anonimato do
-    grupo. Filtrar por exclusão (em vez de exigir `role == member`) é o que permite
-    contar também os respondentes anônimos vindos de convite, que não têm conta.
-    """
-    return {
-        u.id for u in s.query(User).filter(User.tenant_id == company_id, User.role != auth.MEMBER).all()
-    }
-
-
-def _copsoq_leads(s, company_id: str, area: str | None = None, campaign_id: str | None = None):
-    """Leads COPSOQ concluídos que entram no resultado do recorte."""
-    q = s.query(Lead).filter(
-        Lead.company_id == company_id,
-        Lead.test_id == COPSOQ_TEST_ID,
-        Lead.concluido_em.isnot(None),
-    )
-    if campaign_id:
-        q = q.filter(Lead.campaign_id == campaign_id)
-    if area:
-        q = q.filter(Lead.area == area)
-    excluir = _gestor_ids(s, company_id)
-    return [lead for lead in q.all() if lead.user_id not in excluir]
-
-
-def _copsoq_agg_for(company_id: str, area: str | None, campaign_id: str | None = None) -> dict:
-    with get_session() as s:
-        results = []
-        for lead in _copsoq_leads(s, company_id, area, campaign_id):
-            r = _lead_result(lead)
-            if r and r.get("type") == "copsoq":
-                results.append(r)
-    return copsoq_scoring.aggregate(results)
-
-
-def _company_areas_com_contagem(company_id: str, campaign_id: str | None = None) -> list[dict]:
-    with get_session() as s:
-        areas = s.query(CompanyArea).filter_by(company_id=company_id).order_by(CompanyArea.nome.asc()).all()
-        leads = _copsoq_leads(s, company_id, campaign_id=campaign_id)
-        contagem: dict[str, int] = {}
-        for lead in leads:
-            if lead.area:
-                contagem[lead.area] = contagem.get(lead.area, 0) + 1
-        rows = [{"id": a.id, "nome": a.nome, "respondentes": contagem.get(a.nome, 0)} for a in areas]
-    return rows
-
-
-def _company_members(company_id: str) -> list[dict]:
-    with get_session() as s:
-        members = (
-            s.query(User)
-            .filter(User.tenant_id == company_id, User.role == auth.MEMBER)
-            .order_by(User.created_at.desc())
-            .all()
-        )
-        counts = dict(
-            s.query(Lead.user_id, func.count(Lead.token))
-            .filter(Lead.concluido_em.isnot(None), Lead.company_id == company_id)
-            .group_by(Lead.user_id)
-            .all()
-        )
-        return [
-            {
-                "id": u.id,
-                "nome": u.nome,
-                "sobrenome": u.sobrenome,
-                "email": u.email,
-                "whatsapp": u.whatsapp,
-                "blocked": u.blocked,
-                "testes": counts.get(u.id, 0),
-            }
-            for u in members
-        ]
-
-
-# Guardas de página (redirecionam para o login/home, em vez de 401/403).
-def _page_user(request: Request, *roles: str):
-    """Retorna (user, None) se logado e com papel permitido, senão (None, redirect)."""
-    user = auth.get_current_user_optional(request)
-    if user is None:
-        nxt = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        return None, RedirectResponse(url=f"{settings.base_path}/entrar?next={quote(nxt)}", status_code=302)
-    if roles and user.role not in roles:
-        return None, RedirectResponse(url=_home_for_role(user.role), status_code=302)
-    return user, None
-
-
-def _manager_tenant(request: Request, user: User):
-    """Tenant efetivo do gestor (o próprio, ou o impersonado se super admin).
-
-    Retorna (tenant_id, company, impersonating_nome|None) ou (None, None, None)
-    quando o super admin não está impersonando (deve ir para /admin).
-    """
-    tenant_id = auth.get_effective_tenant_id(request, user)
-    if not tenant_id:
-        return None, None, None
-    with get_session() as s:
-        company = s.get(Company, tenant_id)
-        if company is None:
-            return None, None, None
-        impersonating = company.nome if user.role == auth.SUPER_ADMIN else None
-        return tenant_id, {"nome": company.nome, "slug": company.slug}, impersonating
-
-
 @app.post("/empresa/logout")
 def empresa_logout():
     response = RedirectResponse(url=f"{settings.base_path}/", status_code=302)
@@ -1225,29 +1123,22 @@ def empresa_logout():
 
 
 @app.get("/empresa")
-def empresa_gestao(request: Request):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+def empresa_gestao(request: Request, ok: str | None = None, error: str | None = None):
+    user, tenant_id, company_ctx, impersonating, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _company_data, impersonating = _manager_tenant(request, user)
-    if not tenant_id:
-        # super admin sem impersonar → escolher uma empresa no painel admin
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    with get_session() as s:
-        company = s.get(Company, tenant_id)
-        company_ctx = {"id": company.id, "nome": company.nome, "slug": company.slug}
-    invite_link = f"{settings.public_base_url}/cadastro/{company_ctx['slug']}"
-    members = _company_members(tenant_id)
     return templates.TemplateResponse(
         "empresa_gestao.html",
         {
             "request": request,
             "company": company_ctx,
-            "invite_link": invite_link,
             "areas": _company_areas_com_contagem(tenant_id),
-            "ativos": [m for m in members if not m["blocked"]],
-            "arquivados": [m for m in members if m["blocked"]],
-            **_shell_ctx(user, "empresa", impersonating=impersonating, role=auth.ADMIN),
+            "ok": ok,
+            "error": error,
+            **_shell_ctx(
+                user, "empresa", impersonating=impersonating, role=auth.ADMIN,
+                trilha=deps.trilha_ctx(request, user),
+            ),
         },
     )
 
@@ -1255,64 +1146,11 @@ def empresa_gestao(request: Request):
 # =========================================================================
 # CAMPANHA NR-1 (convites por e-mail + prazo de resposta)
 # =========================================================================
-try:
-    SP_TZ = ZoneInfo("America/Sao_Paulo")
-except ZoneInfoNotFoundError:  # ambiente sem base de fusos (ver tzdata no requirements)
-    log.warning("Base de fusos indisponível — usando UTC-3 fixo para as datas da campanha")
-    SP_TZ = timezone(timedelta(hours=-3))
-
-
-def _fim_do_dia_utc(data: date) -> datetime:
-    """23:59:59 do dia informado em São Paulo, convertido para UTC (naive)."""
-    local = datetime.combine(data, time(23, 59, 59), tzinfo=SP_TZ)
-    return local.astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def _para_data_local(dt: datetime) -> datetime:
-    """UTC naive → horário de São Paulo, para exibir a data ao gestor."""
-    return dt.replace(tzinfo=timezone.utc).astimezone(SP_TZ)
-
-
-def _fmt_data(dt: datetime | None) -> str:
-    return _para_data_local(dt).strftime("%d/%m/%Y") if dt else ""
-
-
-def _campanha_atual(s, company_id: str) -> Campaign | None:
-    """Campanha mais recente da empresa (aberta ou já encerrada)."""
-    return (
-        s.query(Campaign)
-        .filter(Campaign.company_id == company_id)
-        .order_by(Campaign.created_at.desc())
-        .first()
-    )
-
-
-def _campanha_ctx(campaign: Campaign | None, invites_rows: list[CampaignInvite] | None = None) -> dict | None:
-    if campaign is None:
-        return None
-    rows = invites_rows or []
-    responderam = sum(1 for i in rows if i.respondido_em)
-    return {
-        "id": campaign.id,
-        "titulo": campaign.titulo,
-        "inicio": _fmt_data(campaign.inicio),
-        "fim": _fmt_data(campaign.fim),
-        "aberta": campaign.esta_aberta,
-        "total": len(rows),
-        "responderam": responderam,
-        "pendentes": len(rows) - responderam,
-        "falhas": sum(1 for i in rows if i.erro_envio),
-    }
-
-
 @app.get("/empresa/avaliacao")
 def empresa_avaliacao(request: Request, ok: str | None = None, error: str | None = None):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    user, tenant_id, company_data, impersonating, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, company_data, impersonating = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
 
     with get_session() as s:
         campaign = _campanha_atual(s, tenant_id)
@@ -1332,9 +1170,12 @@ def empresa_avaliacao(request: Request, ok: str | None = None, error: str | None
                 "area": i.area,
                 "respondeu": i.respondido_em is not None,
                 "erro": i.erro_envio,
+                "recebeu": i.recebeu,
+                "reengajado": i.reengajado_em is not None,
             }
             for i in rows
         ]
+        areas = [a.nome for a in s.query(CompanyArea).filter_by(company_id=tenant_id).order_by(CompanyArea.nome.asc()).all()]
 
     return templates.TemplateResponse(
         "empresa_avaliacao.html",
@@ -1343,11 +1184,28 @@ def empresa_avaliacao(request: Request, ok: str | None = None, error: str | None
             "company": company_data,
             "campanha": campanha,
             "convidados": convidados,
-            "min_data": (datetime.now(SP_TZ).date() + timedelta(days=1)).isoformat(),
+            "areas": areas,
+            "min_data": (deps.hoje_sp() + timedelta(days=1)).isoformat(),
             "ok": ok,
             "error": error,
-            **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
+            **_shell_ctx(
+                user, "avaliacao", impersonating=impersonating, role=auth.ADMIN,
+                trilha=deps.trilha_ctx(request, user),
+            ),
         },
+    )
+
+
+@app.get("/empresa/avaliacao/modelo.xlsx")
+def empresa_avaliacao_modelo(request: Request):
+    """Planilha modelo com o cabeçalho que o sistema reconhece."""
+    _user, _tid, _c, _imp, redir = deps.gestor_page(request)
+    if redir:
+        return redir
+    return Response(
+        content=invites.modelo_xlsx(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="modelo-colaboradores.xlsx"'},
     )
 
 
@@ -1357,42 +1215,74 @@ async def empresa_avaliacao_preview(
     planilha: UploadFile = File(...),
     data_fim: str = Form(...),
 ):
-    """Lê a planilha e mostra a prévia. Nada é gravado nesta etapa."""
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    """Lê a planilha e mostra a prévia. Nada é gravado nesta etapa.
+
+    Quando o cabeçalho não permite identificar as três colunas, em vez de recusar o
+    arquivo caímos na tela de mapeamento para o gestor apontar qual coluna é qual.
+    """
+    user, tenant_id, company_data, impersonating, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, company_data, impersonating = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
 
-    def falhou(msg: str):
-        return RedirectResponse(
-            url=f"{settings.base_path}/empresa/avaliacao?error={quote(msg)}", status_code=302
+    fim = _valida_data_fim(data_fim)
+    if fim is None:
+        return deps.redirect(
+            "/empresa/avaliacao", error="A data de fim precisa ser uma data válida e posterior a hoje."
         )
-
-    try:
-        fim = date.fromisoformat(data_fim)
-    except ValueError:
-        return falhou("Data de fim inválida.")
-    if fim <= datetime.now(SP_TZ).date():
-        return falhou("A data de fim precisa ser posterior a hoje.")
 
     conteudo = await planilha.read()
     try:
-        linhas, erros = invites.parse_planilha(planilha.filename or "", conteudo)
+        grade = invites.ler_grade(planilha.filename or "", conteudo)
     except ValueError as exc:
-        return falhou(str(exc))
+        return deps.redirect("/empresa/avaliacao", error=str(exc))
     except Exception:
         log.exception("Falha ao ler a planilha de convites")
-        return falhou("Não consegui ler esse arquivo. Envie uma planilha .xlsx ou .csv.")
+        return deps.redirect(
+            "/empresa/avaliacao", error="Não consegui ler esse arquivo. Envie uma planilha .xlsx ou .csv."
+        )
 
+    mapa = invites.sugerir_mapa(grade)
+    if invites.campos_faltando(mapa):
+        return templates.TemplateResponse(
+            "empresa_avaliacao_mapear.html",
+            {
+                "request": request,
+                "company": company_data,
+                "colunas": invites.colunas_para_escolha(grade),
+                "mapa": mapa,
+                "total_linhas": len(grade) - 1,
+                "data_fim": data_fim,
+                "data_fim_br": fim.strftime("%d/%m/%Y"),
+                "grade_json": json.dumps(grade, ensure_ascii=False),
+                **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
+            },
+        )
+
+    linhas, erros = invites.mapear_e_validar(grade, mapa)
+    return _tela_preview(
+        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim
+    )
+
+
+def _valida_data_fim(data_fim: str) -> date | None:
+    """Data de fim válida (posterior a hoje em São Paulo) ou None."""
+    try:
+        fim = date.fromisoformat(data_fim)
+    except ValueError:
+        return None
+    return fim if fim > deps.hoje_sp() else None
+
+
+def _tela_preview(request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim):
+    """Prévia do envio: o que será criado, o que foi descartado e as áreas novas."""
     if not linhas:
-        return falhou("Não encontrei nenhuma linha válida na planilha.")
-
+        return deps.redirect(
+            "/empresa/avaliacao",
+            error="Não encontrei nenhuma linha válida na planilha. Confira as colunas e tente de novo.",
+        )
     with get_session() as s:
         existentes = {a.nome for a in s.query(CompanyArea).filter_by(company_id=tenant_id).all()}
-    areas_planilha = sorted({l["area"] for l in linhas})
-    areas_novas = [a for a in areas_planilha if a not in existentes]
+    areas_novas = [a for a in sorted({l["area"] for l in linhas}) if a not in existentes]
 
     return templates.TemplateResponse(
         "empresa_avaliacao_preview.html",
@@ -1407,6 +1297,47 @@ async def empresa_avaliacao_preview(
             "payload": json.dumps(linhas, ensure_ascii=False),
             **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
         },
+    )
+
+
+@app.post("/empresa/avaliacao/mapear")
+def empresa_avaliacao_mapear(
+    request: Request,
+    grade_json: str = Form(...),
+    data_fim: str = Form(...),
+    col_nome: int = Form(...),
+    col_email: int = Form(...),
+    col_area: int = Form(...),
+):
+    """Aplica o mapeamento escolhido pelo gestor e segue para a prévia."""
+    user, tenant_id, company_data, impersonating, redir = deps.gestor_page(request)
+    if redir:
+        return redir
+
+    fim = _valida_data_fim(data_fim)
+    if fim is None:
+        return deps.redirect("/empresa/avaliacao", error="A data de fim precisa ser posterior a hoje.")
+
+    try:
+        grade = json.loads(grade_json)
+    except (ValueError, json.JSONDecodeError):
+        return deps.redirect(
+            "/empresa/avaliacao", error="Não consegui processar a planilha. Envie o arquivo de novo."
+        )
+
+    if len({col_nome, col_email, col_area}) < 3:
+        return deps.redirect(
+            "/empresa/avaliacao", error="Escolha uma coluna diferente para nome, e-mail e área."
+        )
+    try:
+        linhas, erros = invites.mapear_e_validar(
+            grade, {"nome": col_nome, "email": col_email, "area": col_area}
+        )
+    except ValueError as exc:
+        return deps.redirect("/empresa/avaliacao", error=str(exc))
+
+    return _tela_preview(
+        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim
     )
 
 
@@ -1444,24 +1375,19 @@ def empresa_avaliacao_enviar(
     data_fim: str = Form(...),
 ):
     """Confirma a prévia: cria a campanha, os convites e dispara os e-mails."""
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    user, tenant_id, _company_data, _imp, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _company_data, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
 
     def falhou(msg: str):
-        return RedirectResponse(
-            url=f"{settings.base_path}/empresa/avaliacao?error={quote(msg)}", status_code=302
-        )
+        return deps.redirect("/empresa/avaliacao", error=msg)
 
     try:
-        fim = date.fromisoformat(data_fim)
         linhas = json.loads(payload)
     except (ValueError, json.JSONDecodeError):
         return falhou("Não consegui processar o envio. Refaça o upload da planilha.")
-    if fim <= datetime.now(SP_TZ).date():
+    fim = _valida_data_fim(data_fim)
+    if fim is None:
         return falhou("A data de fim precisa ser posterior a hoje.")
     if not linhas:
         return falhou("Nenhum colaborador para convidar.")
@@ -1478,7 +1404,7 @@ def empresa_avaliacao_enviar(
             id=uuid.uuid4().hex,
             company_id=tenant_id,
             test_id=COPSOQ_TEST_ID,
-            titulo=f"Avaliação NR-1 — {datetime.now(SP_TZ).strftime('%d/%m/%Y')}",
+            titulo=f"Avaliação NR-1 — {deps.hoje_sp().strftime('%d/%m/%Y')}",
             inicio=datetime.utcnow(),
             fim=_fim_do_dia_utc(fim),
             created_by=user.id,
@@ -1505,50 +1431,175 @@ def empresa_avaliacao_enviar(
 
     log.info("Campanha %s criada para %s com %s convites", campaign_id, empresa_nome, total)
     bg.add_task(_enviar_convites, campaign_id)
-    msg = f"Campanha criada. Estamos enviando o convite para {total} colaborador(es)."
-    return RedirectResponse(url=f"{settings.base_path}/empresa/avaliacao?ok={quote(msg)}", status_code=302)
+    return deps.redirect(
+        "/empresa/avaliacao",
+        ok=f"Convites criados. Estamos enviando o e-mail para {total} colaborador(es).",
+    )
 
 
-@app.post("/empresa/avaliacao/reenviar")
-def empresa_avaliacao_reenviar(request: Request, bg: BackgroundTasks):
-    """Reenvia o convite para quem ainda não respondeu."""
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+# ---- Convites avulsos (quem ficou de fora da planilha) -------------------
+def _adicionar_convidados(tenant_id: str, linhas: list[dict]) -> tuple[str | None, int, int, str | None]:
+    """Cria convites novos na campanha aberta.
+
+    Devolve `(campaign_id, criados, repetidos, erro)`. Quem já está convidado é
+    ignorado em silêncio (contado em `repetidos`) — reenviar link para a mesma
+    pessoa criaria dois tokens para um respondente só.
+    """
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        if campaign is None or not campaign.esta_aberta:
+            return None, 0, 0, "Não há teste em andamento. Envie a planilha para começar um."
+        ja_convidados = {
+            i.email
+            for i in s.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id).all()
+        }
+        existentes = {a.nome for a in s.query(CompanyArea).filter_by(company_id=tenant_id).all()}
+        criados = repetidos = 0
+        for linha in linhas:
+            if linha["email"] in ja_convidados:
+                repetidos += 1
+                continue
+            if linha["area"] not in existentes:
+                s.add(CompanyArea(company_id=tenant_id, nome=linha["area"]))
+                existentes.add(linha["area"])
+            s.add(CampaignInvite(
+                campaign_id=campaign.id,
+                token=uuid.uuid4().hex,
+                nome=linha["nome"],
+                email=linha["email"],
+                area=linha["area"],
+            ))
+            ja_convidados.add(linha["email"])
+            criados += 1
+        s.commit()
+        return campaign.id, criados, repetidos, None
+
+
+@app.post("/empresa/avaliacao/adicionar")
+def empresa_avaliacao_adicionar(
+    request: Request,
+    bg: BackgroundTasks,
+    nome: str = Form(...),
+    email: str = Form(...),
+    area: str = Form(...),
+):
+    """Adiciona uma pessoa a um teste já em andamento."""
+    _user, tenant_id, _c, _imp, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _company_data, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+    linhas, erros = invites.parse_colado(f"{nome.strip()};{email.strip()};{area.strip()}")
+    if not linhas:
+        return deps.redirect(
+            "/empresa/avaliacao", error=erros[0] if erros else "Confira nome, e-mail e área."
+        )
+    campaign_id, criados, repetidos, erro = _adicionar_convidados(tenant_id, linhas)
+    if erro:
+        return deps.redirect("/empresa/avaliacao", error=erro)
+    if not criados:
+        return deps.redirect("/empresa/avaliacao", error="Essa pessoa já foi convidada neste teste.")
+    bg.add_task(_enviar_convites, campaign_id)
+    return deps.redirect("/empresa/avaliacao", ok=f"Convite enviado para {linhas[0]['email']}.")
+
+
+@app.post("/empresa/avaliacao/adicionar-lote")
+def empresa_avaliacao_adicionar_lote(request: Request, bg: BackgroundTasks, lista: str = Form(...)):
+    """Adiciona várias pessoas de uma vez a partir de uma lista colada."""
+    _user, tenant_id, _c, _imp, redir = deps.gestor_page(request)
+    if redir:
+        return redir
+    linhas, erros = invites.parse_colado(lista)
+    if not linhas:
+        return deps.redirect(
+            "/empresa/avaliacao",
+            error=erros[0] if erros else "Nenhuma linha válida. Use o formato Nome; e-mail; Área.",
+        )
+    campaign_id, criados, repetidos, erro = _adicionar_convidados(tenant_id, linhas)
+    if erro:
+        return deps.redirect("/empresa/avaliacao", error=erro)
+    if not criados:
+        return deps.redirect("/empresa/avaliacao", error="Todas essas pessoas já estavam convidadas.")
+    bg.add_task(_enviar_convites, campaign_id)
+    partes = [f"Convite enviado para {criados} pessoa(s)"]
+    if repetidos:
+        partes.append(f"{repetidos} já estavam na lista")
+    if erros:
+        partes.append(f"{len(erros)} linha(s) com problema foram ignoradas")
+    return deps.redirect("/empresa/avaliacao", ok=". ".join(partes) + ".")
+
+
+# ---- Reengajamento -------------------------------------------------------
+def _enviar_reengajamento(campaign_id: str) -> None:
+    """Lembrete para quem recebeu o link e não respondeu (roda em background)."""
+    with get_session() as s:
+        campaign = s.get(Campaign, campaign_id)
+        if campaign is None:
+            return
+        company = s.get(Company, campaign.company_id)
+        empresa_nome = company.nome if company else "sua empresa"
+        prazo = _fmt_data(campaign.fim)
+        alvos = (
+            s.query(CampaignInvite)
+            .filter(
+                CampaignInvite.campaign_id == campaign_id,
+                CampaignInvite.respondido_em.is_(None),
+                CampaignInvite.enviado_em.isnot(None),
+                CampaignInvite.erro_envio.is_(None),
+            )
+            .all()
+        )
+        for convite in alvos:
+            link = f"{settings.public_base_url}{settings.base_path}/nr1/{convite.token}"
+            # Carimba ANTES de enviar: se o processo cair no meio, o pior caso é
+            # alguém não receber o lembrete — nunca receber dois.
+            convite.reengajado_em = datetime.utcnow()
+            s.commit()
+            try:
+                mailer.send_reengagement_email(convite.email, convite.nome, empresa_nome, prazo, link)
+            except Exception as exc:
+                log.error("Falha no reengajamento de %s: %s", convite.email, exc)
+
+
+@app.post("/empresa/avaliacao/reengajar")
+def empresa_avaliacao_reengajar(request: Request, bg: BackgroundTasks):
+    """Manda um lembrete (e-mail próprio, não o convite repetido) para quem não respondeu."""
+    _user, tenant_id, _company_data, _imp, redir = deps.gestor_page(request)
+    if redir:
+        return redir
 
     with get_session() as s:
         campaign = _campanha_atual(s, tenant_id)
         if campaign is None or not campaign.esta_aberta:
-            return RedirectResponse(
-                url=f"{settings.base_path}/empresa/avaliacao?error={quote('Não há campanha aberta.')}",
-                status_code=302,
-            )
-        pendentes = (
+            return deps.redirect("/empresa/avaliacao", error="Não há teste em andamento.")
+        n = (
             s.query(CampaignInvite)
-            .filter(CampaignInvite.campaign_id == campaign.id, CampaignInvite.respondido_em.is_(None))
-            .all()
+            .filter(
+                CampaignInvite.campaign_id == campaign.id,
+                CampaignInvite.respondido_em.is_(None),
+                CampaignInvite.enviado_em.isnot(None),
+                CampaignInvite.erro_envio.is_(None),
+            )
+            .count()
         )
-        for convite in pendentes:
-            convite.enviado_em = None
-        s.commit()
-        campaign_id, n = campaign.id, len(pendentes)
+        campaign_id = campaign.id
 
-    bg.add_task(_enviar_convites, campaign_id)
-    msg = f"Reenviando o convite para {n} colaborador(es) que ainda não responderam."
-    return RedirectResponse(url=f"{settings.base_path}/empresa/avaliacao?ok={quote(msg)}", status_code=302)
+    if not n:
+        return deps.redirect("/empresa/avaliacao", error="Todo mundo que recebeu o link já respondeu.")
+    bg.add_task(_enviar_reengajamento, campaign_id)
+    return deps.redirect(
+        "/empresa/avaliacao", ok=f"Enviando lembrete para {n} pessoa(s) que ainda não responderam."
+    )
+
+
+@app.post("/empresa/avaliacao/reenviar")
+def empresa_avaliacao_reenviar(request: Request, bg: BackgroundTasks):
+    """Alias do reengajamento, mantido porque a tela antiga aponta para cá."""
+    return empresa_avaliacao_reengajar(request, bg)
 
 
 # =========================================================================
 # RESULTADOS DO GESTOR — abas Gráfico e Relatório
 # =========================================================================
-def _resultados_ctx(request: Request, user: User, area: str | None, aba: str) -> dict | RedirectResponse:
-    tenant_id, company_data, impersonating = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-
+def _resultados_ctx(request: Request, tenant_id: str, company_data: dict, area: str | None, aba: str) -> dict:
     with get_session() as s:
         campaign = _campanha_atual(s, tenant_id)
         rows = (
@@ -1572,97 +1623,47 @@ def _resultados_ctx(request: Request, user: User, area: str | None, aba: str) ->
         "aba": aba,
         "campanha": campanha,
         "min_respondentes": MIN_RESPONDENTES,
-        "tenant_id": tenant_id,
-        "impersonating": impersonating,
     }
-
-
-def _relatorio_secoes(tenant_id: str) -> list[dict]:
-    """Consolidado geral da empresa + uma seção por área com respondentes suficientes."""
-    secoes = []
-    geral = _copsoq_agg_for(tenant_id, None)
-    secoes.append({
-        "titulo": "Consolidado geral da empresa",
-        "escopo": "geral",
-        "agg": geral,
-        "resumo": copsoq_report.resumo(geral),
-        "gargalos": copsoq_report.top_gargalos(geral),
-        "blocos": copsoq_report.build_report(geral),
-    })
-    for a in _company_areas_com_contagem(tenant_id):
-        if a["respondentes"] < MIN_RESPONDENTES:
-            continue
-        agg = _copsoq_agg_for(tenant_id, a["nome"])
-        secoes.append({
-            "titulo": f"Área: {a['nome']}",
-            "escopo": a["nome"],
-            "agg": agg,
-            "resumo": copsoq_report.resumo(agg),
-            "gargalos": copsoq_report.top_gargalos(agg),
-            "blocos": copsoq_report.build_report(agg),
-        })
-    return secoes
 
 
 @app.get("/empresa/resultados")
 def empresa_resultados(request: Request, area: str | None = None, aba: str = "grafico"):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    user, tenant_id, company_data, impersonating, redir = deps.gestor_page(request)
     if redir:
         return redir
     aba = aba if aba in ("grafico", "relatorio") else "grafico"
-    ctx = _resultados_ctx(request, user, area, aba)
-    if isinstance(ctx, RedirectResponse):
-        return ctx
-
-    tenant_id = ctx.pop("tenant_id")
-    impersonating = ctx.pop("impersonating")
+    ctx = _resultados_ctx(request, tenant_id, company_data, area, aba)
     campanha = ctx["campanha"]
 
     # O relatório só é liberado quando o teste encerra. Sem campanha cadastrada,
     # não há prazo a respeitar e o relatório fica disponível.
     relatorio_liberado = campanha is None or not campanha["aberta"]
     ctx["relatorio_liberado"] = relatorio_liberado
-    ctx["secoes"] = _relatorio_secoes(tenant_id) if (aba == "relatorio" and relatorio_liberado) else []
+    # O chip de área vale nas duas abas: na aba Relatório, filtrar é o que torna a
+    # leitura por setor viável (a lista completa é longa).
+    ctx["secoes"] = (
+        queries.secoes_relatorio(tenant_id, escopo=ctx["scope"])
+        if (aba == "relatorio" and relatorio_liberado) else []
+    )
     ctx["pdf_disponivel"] = pdf.disponivel()
 
     return templates.TemplateResponse(
         "empresa_resultados.html",
-        {**ctx, **_shell_ctx(user, "resultados", impersonating=impersonating, role=auth.ADMIN)},
+        {
+            **ctx,
+            **_shell_ctx(
+                user, "resultados", impersonating=impersonating, role=auth.ADMIN,
+                trilha=deps.trilha_ctx(request, user),
+            ),
+        },
     )
 
 
-@app.get("/empresa/relatorio.pdf")
-def empresa_relatorio_pdf(request: Request):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
-    if redir:
-        return redir
-    tenant_id, company_data, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-
-    with get_session() as s:
-        campaign = _campanha_atual(s, tenant_id)
-        campanha = _campanha_ctx(campaign, [])
-    if campanha and campanha["aberta"]:
-        raise HTTPException(403, "O relatório só fica disponível quando o teste é encerrado.")
-
-    secoes = _relatorio_secoes(tenant_id)
-    html = templates.get_template("relatorio_pdf.html").render(
-        company=company_data,
-        secoes=secoes,
-        campanha=campanha,
-        gerado_em=datetime.now(SP_TZ).strftime("%d/%m/%Y"),
-        nivel_cor=copsoq_report.NIVEL_COR,
-        nivel_txt=copsoq_report.NIVEL_LABEL,
-        base_path=settings.base_path,
-    )
+def _pdf_response(html: str, filename: str) -> StreamingResponse:
     try:
         buffer = pdf.html_para_pdf(html, base_url=str(APP_DIR))
     except pdf.PdfIndisponivel as exc:
         raise HTTPException(503, str(exc))
-
-    slug = _slugify(company_data["nome"]) if company_data else "empresa"
-    filename = f"relatorio-nr1-{slug}-{datetime.now(SP_TZ).strftime('%Y-%m-%d')}.pdf"
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
@@ -1670,14 +1671,90 @@ def empresa_relatorio_pdf(request: Request):
     )
 
 
-@app.post("/empresa/nome")
-def empresa_rename(request: Request, nome: str = Form(...)):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+@app.get("/empresa/relatorio.pdf")
+def empresa_relatorio_pdf(request: Request):
+    _user, tenant_id, company_data, _imp, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _c, _i = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        campanha = _campanha_ctx(campaign, [])
+    if campanha and campanha["aberta"]:
+        raise HTTPException(403, "O relatório só fica disponível quando o teste é encerrado.")
+
+    # O PDF sai sempre completo (geral + todas as áreas): é o artefato de arquivo e
+    # de auditoria, diferente da tela, onde o chip recorta.
+    html = templates.get_template("relatorio_pdf.html").render(
+        company=company_data,
+        secoes=queries.secoes_relatorio(tenant_id),
+        campanha=campanha,
+        gerado_em=deps.hoje_sp().strftime("%d/%m/%Y"),
+        nivel_cor=copsoq_report.NIVEL_COR,
+        nivel_txt=copsoq_report.NIVEL_LABEL,
+        base_path=settings.base_path,
+    )
+    slug = _slugify(company_data["nome"]) if company_data else "empresa"
+    return _pdf_response(html, f"relatorio-nr1-{slug}-{deps.hoje_sp().isoformat()}.pdf")
+
+
+@app.get("/empresa/graficos.pdf")
+def empresa_graficos_pdf(request: Request, area: str | None = None):
+    """PDF do painel de gráficos. Disponível a qualquer momento (inclusive com o
+    teste aberto) — é uma foto do andamento, não o relatório final."""
+    _user, tenant_id, company_data, _imp, redir = deps.gestor_page(request)
+    if redir:
+        return redir
+
+    with get_session() as s:
+        campaign = _campanha_atual(s, tenant_id)
+        rows = (
+            s.query(CampaignInvite).filter(CampaignInvite.campaign_id == campaign.id).all()
+            if campaign else []
+        )
+        campanha = _campanha_ctx(campaign, rows)
+
+    areas = _company_areas_com_contagem(tenant_id)
+    escopo = area or None
+    if escopo:
+        alvo = next((a for a in areas if a["nome"] == escopo), None)
+        if alvo is None:
+            raise HTTPException(404, "Área não encontrada.")
+        paineis = [{"titulo": f"Área: {escopo}", "agg": _copsoq_agg_for(tenant_id, escopo)}]
+    else:
+        paineis = [{"titulo": "Geral da empresa", "agg": _copsoq_agg_for(tenant_id, None)}]
+        paineis += [
+            {"titulo": f"Área: {a['nome']}", "agg": _copsoq_agg_for(tenant_id, a["nome"])}
+            for a in areas
+            if a["respondentes"] >= MIN_RESPONDENTES
+        ]
+
+    paineis = [p for p in paineis if p["agg"]["respondentes"] >= MIN_RESPONDENTES]
+    if not paineis:
+        raise HTTPException(
+            403,
+            f"Ainda não há respostas suficientes para gerar o PDF (mínimo de {MIN_RESPONDENTES} respondentes).",
+        )
+
+    html = templates.get_template("graficos_pdf.html").render(
+        company=company_data,
+        paineis=[{**p, "blocos": copsoq_report.build_report(p["agg"])} for p in paineis],
+        campanha=campanha,
+        escopo=escopo,
+        gerado_em=deps.hoje_sp().strftime("%d/%m/%Y"),
+        nivel_cor=copsoq_report.NIVEL_COR,
+        nivel_txt=copsoq_report.NIVEL_LABEL,
+        base_path=settings.base_path,
+    )
+    slug = _slugify(company_data["nome"]) if company_data else "empresa"
+    return _pdf_response(html, f"graficos-nr1-{slug}-{deps.hoje_sp().isoformat()}.pdf")
+
+
+@app.post("/empresa/nome")
+def empresa_rename(request: Request, nome: str = Form(...)):
+    _user, tenant_id, _c, _i, redir = deps.gestor_page(request)
+    if redir:
+        return redir
     nome = nome.strip()
     if nome:
         with get_session() as s:
@@ -1690,12 +1767,9 @@ def empresa_rename(request: Request, nome: str = Form(...)):
 
 @app.post("/empresa/areas/{area_id}/rename")
 def empresa_rename_area(area_id: int, request: Request, nome: str = Form(...)):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    _user, tenant_id, _c, _i, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _c, _i = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     novo = nome.strip()
     with get_session() as s:
         area = s.get(CompanyArea, area_id)
@@ -1710,54 +1784,17 @@ def empresa_rename_area(area_id: int, request: Request, nome: str = Form(...)):
     return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
 
 
-@app.post("/empresa/colaboradores/{user_id}/edit")
-def empresa_edit_colaborador(user_id: str, request: Request, nome: str = Form(...), sobrenome: str = Form(""), email: str = Form(...)):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
-    if redir:
-        return redir
-    tenant_id, _c, _i = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    email_norm = email.lower().strip()
-    with get_session() as s:
-        target = s.get(User, user_id)
-        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
-            reserved = settings.super_admin_email and email_norm == settings.super_admin_email.lower().strip()
-            clash = s.query(User).filter(User.email == email_norm, User.id != target.id).first()
-            if clash is None and not reserved:
-                target.nome = nome.strip()
-                target.sobrenome = sobrenome.strip()
-                target.email = email_norm
-                s.commit()
-    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
-
-
-@app.post("/empresa/colaboradores/{user_id}/arquivar")
-def empresa_arquivar_colaborador(user_id: str, request: Request):
-    """Arquiva/reativa um colaborador. Arquivar = blocked=True (perde acesso, dados preservados)."""
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
-    if redir:
-        return redir
-    tenant_id, _c, _i = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    with get_session() as s:
-        target = s.get(User, user_id)
-        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
-            target.blocked = not target.blocked
-            s.commit()
-    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
+# As rotas /empresa/colaboradores/* foram removidas junto com o card "Colaboradores":
+# sem tela que as chame, seriam mutação exposta sem uso. Os colaboradores seguem no
+# banco, continuam entrando em /testes e aparecem em /admin/usuarios.
 
 
 # O gestor de cada empresa gerencia as próprias áreas (não o super admin).
 @app.post("/empresa/areas")
 def empresa_add_area(request: Request, nome: str = Form(...)):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    _user, tenant_id, _company, _imp, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _company, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     nome = nome.strip()
     with get_session() as s:
         if nome and s.query(CompanyArea).filter_by(company_id=tenant_id, nome=nome).first() is None:
@@ -1768,33 +1805,13 @@ def empresa_add_area(request: Request, nome: str = Form(...)):
 
 @app.post("/empresa/areas/{area_id}/delete")
 def empresa_delete_area(area_id: int, request: Request):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
+    _user, tenant_id, _company, _imp, redir = deps.gestor_page(request)
     if redir:
         return redir
-    tenant_id, _company, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
     with get_session() as s:
         area = s.get(CompanyArea, area_id)
         if area is not None and area.company_id == tenant_id:
             s.delete(area)
-            s.commit()
-    return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
-
-
-@app.post("/empresa/colaboradores/{user_id}/block")
-def empresa_toggle_block(user_id: str, request: Request):
-    user, redir = _page_user(request, auth.ADMIN, auth.SUPER_ADMIN)
-    if redir:
-        return redir
-    tenant_id, _company, _imp = _manager_tenant(request, user)
-    if not tenant_id:
-        return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    with get_session() as s:
-        target = s.get(User, user_id)
-        # Só age sobre colaborador (member) do próprio tenant — nunca outro tenant/papel.
-        if target is not None and target.tenant_id == tenant_id and target.role == auth.MEMBER:
-            target.blocked = not target.blocked
             s.commit()
     return RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
 
@@ -1812,13 +1829,14 @@ def configuracoes_page(request: Request, ok: str | None = None, error: str | Non
     user, redir = _page_user(request)
     if redir:
         return redir
-    is_admin = user.role == auth.ADMIN
+    # Consultor também gerencia quem entra no painel da consultoria dele.
+    is_admin = user.role in (auth.ADMIN, auth.CONSULTANT)
     admins = []
     if is_admin and user.tenant_id:
         with get_session() as s:
             rows = (
                 s.query(User)
-                .filter(User.tenant_id == user.tenant_id, User.role == auth.ADMIN)
+                .filter(User.tenant_id == user.tenant_id, User.role == user.role)
                 .order_by(User.created_at.asc())
                 .all()
             )
@@ -1872,7 +1890,7 @@ def configuracoes_senha(request: Request, atual: str = Form(...), nova: str = Fo
 
 @app.post("/configuracoes/admins")
 def configuracoes_add_admin(request: Request, nome: str = Form(...), sobrenome: str = Form(""), email: str = Form(...), senha: str = Form(...)):
-    user, redir = _page_user(request, auth.ADMIN)
+    user, redir = _page_user(request, auth.ADMIN, auth.CONSULTANT)
     if redir:
         return redir
     if not user.tenant_id:
@@ -1887,7 +1905,7 @@ def configuracoes_add_admin(request: Request, nome: str = Form(...), sobrenome: 
             return _cfg_redirect(error="Esse e-mail já está em uso")
         s.add(User(
             id=auth.new_user_id(), email=email_norm, password_hash=auth.hash_password(senha),
-            nome=nome.strip(), sobrenome=sobrenome.strip(), whatsapp="", role=auth.ADMIN, tenant_id=user.tenant_id,
+            nome=nome.strip(), sobrenome=sobrenome.strip(), whatsapp="", role=user.role, tenant_id=user.tenant_id,
         ))
         s.commit()
     return _cfg_redirect(ok="Administrador adicionado")
@@ -1895,15 +1913,15 @@ def configuracoes_add_admin(request: Request, nome: str = Form(...), sobrenome: 
 
 @app.post("/configuracoes/admins/{admin_id}/delete")
 def configuracoes_del_admin(admin_id: str, request: Request):
-    user, redir = _page_user(request, auth.ADMIN)
+    user, redir = _page_user(request, auth.ADMIN, auth.CONSULTANT)
     if redir:
         return redir
     if admin_id == user.id:
         return _cfg_redirect(error="Você não pode remover a si mesmo")
     with get_session() as s:
         target = s.get(User, admin_id)
-        if target is not None and target.tenant_id == user.tenant_id and target.role == auth.ADMIN:
-            count = s.query(User).filter(User.tenant_id == user.tenant_id, User.role == auth.ADMIN).count()
+        if target is not None and target.tenant_id == user.tenant_id and target.role == user.role:
+            count = s.query(User).filter(User.tenant_id == user.tenant_id, User.role == user.role).count()
             if count > 1:
                 try:
                     s.delete(target)
@@ -1942,39 +1960,60 @@ def admin_impersonate(tenant_id: str, request: Request):
     if redir:
         return redir
     with get_session() as s:
-        if s.get(Company, tenant_id) is None:
-            return RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    response = RedirectResponse(url=f"{settings.base_path}/empresa", status_code=302)
-    response.set_cookie(
-        key=auth.IMPERSONATE_COOKIE,
-        value=auth.make_impersonation_token(tenant_id),
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=8 * 3600,
-        path="/",
-    )
+        alvo = s.get(Company, tenant_id)
+        if alvo is None:
+            return deps.redirect("/admin", error="Tenant não encontrado.")
+        # Trilha completa (consultoria → empresa): é o que faz o "Voltar" subir um
+        # nível de cada vez em vez de pular direto para o painel do owner.
+        trilha = deps.ancestral_de(s, alvo)
+        destino = "/consultor" if alvo.kind == Company.KIND_CONSULTORIA else "/empresa"
+    response = RedirectResponse(url=f"{settings.base_path}{destino}", status_code=302)
+    deps.set_impersonation(response, trilha)
     return response
 
 
 @app.post("/admin/impersonate/stop")
-def admin_impersonate_stop():
-    response = RedirectResponse(url=f"{settings.base_path}/admin", status_code=302)
-    response.delete_cookie(key=auth.IMPERSONATE_COOKIE, path="/")
-    return response
+def admin_impersonate_stop(request: Request):
+    """Alias de /impersonate/stop (o banner antigo aponta para cá)."""
+    return consultor.impersonate_stop(request)
 
 
 @app.get("/admin")
-def admin_dashboard(request: Request):
+def admin_dashboard(request: Request, ok: str | None = None, error: str | None = None):
     user, redir = _page_user(request, auth.SUPER_ADMIN)
     if redir:
         return redir
     with get_session() as s:
-        empresas = s.query(Company).order_by(Company.created_at.desc()).all()
-        empresas_rows = [{"id": c.id, "nome": c.nome, "slug": c.slug} for c in empresas]
+        todos = s.query(Company).order_by(Company.created_at.desc()).all()
+        nomes = {c.id: c.nome for c in todos}
+        consultorias, empresas = [], []
+        for c in todos:
+            linha = {
+                "id": c.id,
+                "nome": c.nome,
+                "slug": c.slug,
+                "status": c.status,
+                "pendente": c.status == Company.STATUS_PENDENTE,
+                "billing_mode": c.billing_mode,
+                "consultoria": nomes.get(c.parent_id) if c.parent_id else None,
+                # Empresa de consultor é aprovada por ele — o owner não age nessa fila.
+                "aprova_owner": c.parent_id is None,
+                "criado_em": deps.fmt_data(c.created_at),
+            }
+            (consultorias if c.kind == Company.KIND_CONSULTORIA else empresas).append(linha)
     return templates.TemplateResponse(
         "admin_dashboard.html",
-        {"request": request, "empresas": empresas_rows, **_shell_ctx(user, "empresas")},
+        {
+            "request": request,
+            "consultorias": consultorias,
+            "empresas": empresas,
+            "pendentes_owner": [
+                c for c in consultorias + empresas if c["pendente"] and c["aprova_owner"]
+            ],
+            "ok": ok,
+            "error": error,
+            **_shell_ctx(user, "empresas"),
+        },
     )
 
 
@@ -2112,12 +2151,18 @@ def admin_create_empresa(
             slug = f"{base}-{i}"
             i += 1
         pw_hash = auth.hash_password(manager_password) if manager_password else ""
+        # Empresa criada à mão pelo owner já nasce liberada e sem cobrança: a forma de
+        # cobrança é definida depois, no card Cobrança da tela da empresa.
         company = Company(
             id=uuid.uuid4().hex,
             nome=nome,
             slug=slug,
             manager_email=email_norm,
             manager_password_hash=pw_hash,
+            kind=Company.KIND_EMPRESA,
+            status=Company.STATUS_ATIVO,
+            billing_mode=Company.BILLING_ISENTO,
+            approved_at=datetime.utcnow(),
         )
         s.add(company)
         s.flush()
@@ -2145,7 +2190,7 @@ def admin_create_empresa(
 
 
 @app.get("/admin/empresas/{company_id}")
-def admin_empresa_detail(company_id: str, request: Request):
+def admin_empresa_detail(company_id: str, request: Request, ok: str | None = None, error: str | None = None):
     admin_user, redir = _page_user(request, auth.SUPER_ADMIN)
     if redir:
         return redir
@@ -2153,15 +2198,25 @@ def admin_empresa_detail(company_id: str, request: Request):
         company = s.get(Company, company_id)
         if company is None:
             raise HTTPException(404, "Empresa não encontrada")
+        plano = s.get(Plan, company.plan_id) if company.plan_id else None
+        consultoria = s.get(Company, company.parent_id) if company.parent_id else None
         company_data = {
             "id": company.id,
             "nome": company.nome,
             "slug": company.slug,
             "manager_email": company.manager_email,
+            "kind": company.kind,
+            "status": company.status,
+            "parent_id": company.parent_id,
+            "consultoria": consultoria.nome if consultoria else None,
+            "billing_mode": company.billing_mode,
+            "plan_id": company.plan_id,
+            "plano": {"nome": plano.nome, "valor_centavos": plano.valor_centavos} if plano else None,
+            "asaas_erro": company.asaas_erro,
         }
+        tipo_plano = Plan.TIPO_CONSULTORIA if company.e_consultoria else Plan.TIPO_EMPRESA
     areas = _company_areas_com_contagem(company_id)
     total = sum(a["respondentes"] for a in areas)
-    link = f"{settings.public_base_url}/cadastro/{company_data['slug']}"
     return templates.TemplateResponse(
         "admin_empresa.html",
         {
@@ -2169,7 +2224,13 @@ def admin_empresa_detail(company_id: str, request: Request):
             "company": company_data,
             "areas": areas,
             "total_respondentes": total,
-            "link": link,
+            "planos": plans.listar(tipo=tipo_plano, apenas_ativos=True),
+            "hoje": deps.hoje_sp().isoformat(),
+            "vencimento_padrao": (
+                deps.hoje_sp() + timedelta(days=billing.PRIMEIRA_FATURA_DIAS)
+            ).isoformat(),
+            "ok": ok,
+            "error": error,
             **_shell_ctx(admin_user, "empresas"),
         },
     )

@@ -4,25 +4,17 @@
 <div class="mx-auto max-w-4xl space-y-6">
   <h1 class="text-2xl font-bold text-slate-900">Empresa</h1>
 
-  <!-- Link de convite (destaque) -->
-  <div class="rounded-xl border-2 border-teal-600 bg-teal-50 p-5" x-data="{ copied: false }">
-    <h2 class="text-sm font-semibold text-teal-900 mb-1">Link de convite para colaboradores</h2>
-    <p class="text-xs text-teal-800 mb-3">Envie este link para os colaboradores criarem a conta e responderem os testes.</p>
-    <div class="flex flex-col sm:flex-row gap-2">
-      <input type="text" readonly value="{{ invite_link }}" x-ref="invite" @focus="$el.select()"
-             class="flex-1 rounded-lg border border-teal-300 bg-white px-3 py-2.5 text-sm text-slate-700">
-      <button type="button"
-              @click="navigator.clipboard.writeText('{{ invite_link }}'); copied = true; setTimeout(() => copied = false, 2000)"
-              class="btn-primary px-5 py-2.5 whitespace-nowrap">
-        <span x-show="!copied">Copiar link</span>
-        <span x-show="copied" x-cloak>Copiado!</span>
-      </button>
-    </div>
-  </div>
+  {% if ok %}
+  <div class="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">{{ ok }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+  {% endif %}
 
   <!-- Nome da empresa -->
   <div class="card p-5">
-    <h2 class="text-sm font-semibold text-slate-700 mb-3">Nome da empresa</h2>
+    <h2 class="text-sm font-semibold text-slate-700 mb-1">Nome da empresa (nome exibido para os colaboradores)</h2>
+    <p class="text-xs text-slate-500 mb-3">É este nome que aparece no e-mail do convite e na tela do teste.</p>
     <form method="POST" action="{{ base_path }}/empresa/nome" class="flex flex-col sm:flex-row gap-2">
       <input name="nome" required value="{{ company.nome }}" class="input flex-1">
       <button class="btn-primary px-5">Salvar</button>
@@ -32,7 +24,7 @@
   <!-- Áreas -->
   <div class="card p-5">
     <h2 class="text-sm font-semibold text-slate-700 mb-1">Áreas / setores</h2>
-    <p class="text-xs text-slate-500 mb-3">Cadastre as áreas da empresa. Os colaboradores escolhem entre elas ao responder o teste.</p>
+    <p class="text-xs text-slate-500 mb-3">Cadastre as áreas da empresa. Elas são usadas para separar os resultados por setor.</p>
     <form method="POST" action="{{ base_path }}/empresa/areas" class="flex gap-2 mb-4">
       <input name="nome" required placeholder="Ex.: Comercial" class="input flex-1">
       <button class="btn-primary px-5">Adicionar</button>
@@ -59,85 +51,8 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="text-sm text-slate-500">Nenhuma área cadastrada ainda.</p>
+    <p class="text-sm text-slate-500">Nenhuma área cadastrada ainda. Elas também são criadas sozinhas a partir da planilha de convites.</p>
     {% endif %}
   </div>
-
-  <!-- Colaboradores ativos -->
-  <div class="card p-5">
-    <h2 class="text-sm font-semibold text-slate-700 mb-1">Colaboradores</h2>
-    <p class="text-xs text-slate-500 mb-3">Quem se cadastrou pelo link da empresa. As respostas individuais são privadas — você vê apenas o resultado agregado.</p>
-    {% if ativos %}
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-slate-500 text-xs">
-          <tr><th class="text-left py-1 font-medium">Nome</th><th class="text-left py-1 font-medium">E-mail</th><th class="text-center py-1 font-medium">Testes</th><th class="text-right py-1 font-medium">Ações</th></tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% for c in ativos %}
-          <tr x-data="{ editing: false }">
-            <template x-if="!editing">
-              <td class="py-2 text-slate-800">{{ c.nome }} {{ c.sobrenome }}</td>
-            </template>
-            <template x-if="!editing">
-              <td class="py-2 text-slate-600">{{ c.email }}</td>
-            </template>
-            <template x-if="!editing">
-              <td class="py-2 text-center text-slate-700">{{ c.testes }}</td>
-            </template>
-            <template x-if="!editing">
-              <td class="py-2 text-right whitespace-nowrap">
-                <button type="button" @click="editing = true" class="text-xs text-teal-700 hover:text-teal-900 mr-3">Editar</button>
-                <form method="POST" action="{{ base_path }}/empresa/colaboradores/{{ c.id }}/arquivar" class="inline" onsubmit="return confirm('Arquivar este colaborador? Ele perde o acesso, mas o histórico é preservado.');">
-                  <button class="text-xs text-red-600 hover:text-red-800">Arquivar</button>
-                </form>
-              </td>
-            </template>
-            <template x-if="editing">
-              <td colspan="4" class="py-2">
-                <form method="POST" action="{{ base_path }}/empresa/colaboradores/{{ c.id }}/edit" class="flex flex-wrap items-center gap-2">
-                  <input name="nome" required value="{{ c.nome }}" placeholder="Nome" class="input w-28 py-1.5">
-                  <input name="sobrenome" value="{{ c.sobrenome }}" placeholder="Sobrenome" class="input w-32 py-1.5">
-                  <input name="email" type="email" required value="{{ c.email }}" placeholder="E-mail" class="input flex-1 min-w-[180px] py-1.5">
-                  <button class="btn-primary px-4 py-1.5">Salvar</button>
-                  <button type="button" @click="editing = false" class="btn-secondary px-4 py-1.5">Cancelar</button>
-                </form>
-              </td>
-            </template>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p class="text-sm text-slate-500">Nenhum colaborador ativo. Compartilhe o link de convite.</p>
-    {% endif %}
-  </div>
-
-  <!-- Colaboradores arquivados -->
-  {% if arquivados %}
-  <div class="card p-5">
-    <h2 class="text-sm font-semibold text-slate-700 mb-1">Arquivados</h2>
-    <p class="text-xs text-slate-500 mb-3">Colaboradores que saíram da empresa. Sem acesso, mas o histórico é preservado.</p>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <tbody class="divide-y divide-slate-100">
-          {% for c in arquivados %}
-          <tr class="opacity-60">
-            <td class="py-2 text-slate-800">{{ c.nome }} {{ c.sobrenome }}</td>
-            <td class="py-2 text-slate-600">{{ c.email }}</td>
-            <td class="py-2 text-center text-slate-700">{{ c.testes }}</td>
-            <td class="py-2 text-right">
-              <form method="POST" action="{{ base_path }}/empresa/colaboradores/{{ c.id }}/arquivar">
-                <button class="text-xs text-teal-700 hover:text-teal-900">Reativar</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
 </div>
 {% endblock %}

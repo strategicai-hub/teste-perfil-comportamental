@@ -1,0 +1,86 @@
+{% extends "_shell.html" %}
+{% block title %}Integrações — Admin{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-3xl space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Integrações</h1>
+    <p class="text-sm text-slate-600 mt-1">Cobrança pelo ASAAS. O que é salvo aqui vale na hora — sem redeploy.</p>
+  </div>
+
+  {% if ok %}<div class="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>{% endif %}
+
+  {% if env_atual != 'production' %}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    Ambiente de <strong>teste (sandbox)</strong>: nenhuma cobrança é real. Troque para produção
+    quando for cobrar de verdade.
+  </div>
+  {% endif %}
+
+  <div class="card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-4">Conta ASAAS</h2>
+    <form method="POST" action="{{ base_path }}/admin/integracoes" class="space-y-4">
+      <label class="block">
+        <span class="label">Chave da API</span>
+        <input name="token" type="password" autocomplete="off"
+               placeholder="{{ token_mascarado or 'Cole a chave da API do ASAAS' }}" class="input">
+        <span class="mt-1 block text-xs text-slate-500">
+          {% if token_mascarado %}Já existe uma chave salva ({{ token_mascarado }}). Deixe em branco para manter.
+          {% elif tem_token_no_env %}Nenhuma chave salva aqui — está sendo usada a do arquivo de configuração do servidor.
+          {% else %}Nenhuma chave configurada: a cobrança não vai funcionar até você informar uma.{% endif %}
+        </span>
+      </label>
+      <label class="block">
+        <span class="label">Ambiente</span>
+        <select name="ambiente" class="input">
+          <option value="sandbox" {% if env_atual != 'production' %}selected{% endif %}>Teste (sandbox)</option>
+          <option value="production" {% if env_atual == 'production' %}selected{% endif %}>Produção — cobra de verdade</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="gerar_webhook_token" value="1" class="h-4 w-4">
+        Gerar um novo token de webhook
+      </label>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-primary px-5">Salvar</button>
+        <button type="submit" formaction="{{ base_path }}/admin/integracoes/testar" class="btn-secondary px-5">
+          Testar conexão
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card p-5" x-data="{ copiado: '' }">
+    <h2 class="text-sm font-semibold text-slate-700 mb-1">Webhook (avisos de pagamento)</h2>
+    <p class="text-xs text-slate-500 mb-4">
+      No painel do ASAAS, em <strong>Integrações &rsaquo; Webhooks</strong>, cadastre a URL abaixo
+      e cole o token no campo de autenticação. Sem isso, o pagamento não desbloqueia o cliente na hora
+      (só na conferência automática, que roda a cada 30 minutos).
+    </p>
+
+    {% for item in [{'rotulo': 'URL do webhook', 'valor': webhook_url}, {'rotulo': 'Token de autenticação', 'valor': webhook_token}] %}
+    <div class="mb-3">
+      <span class="text-xs font-medium text-slate-600">{{ item.rotulo }}</span>
+      <div class="mt-1 flex flex-col gap-2 sm:flex-row">
+        <input readonly value="{{ item.valor }}" @focus="$el.select()"
+               class="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
+        <button type="button" class="btn-secondary px-4 py-2 text-sm whitespace-nowrap"
+                @click="navigator.clipboard.writeText('{{ item.valor }}'); copiado = '{{ item.rotulo }}'; setTimeout(() => copiado = '', 2000)">
+          <span x-show="copiado !== '{{ item.rotulo }}'">Copiar</span>
+          <span x-show="copiado === '{{ item.rotulo }}'" x-cloak>Copiado!</span>
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="mt-4 rounded-lg bg-slate-50 px-4 py-3">
+      <span class="text-xs font-medium text-slate-600">Eventos a marcar no ASAAS</span>
+      <div class="mt-2 flex flex-wrap gap-1.5">
+        {% for e in eventos %}
+        <code class="rounded bg-white px-2 py-0.5 text-xs text-slate-700 border border-slate-200">{{ e }}</code>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

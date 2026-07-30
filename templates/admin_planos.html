@@ -1,0 +1,107 @@
+{% extends "_shell.html" %}
+{% block title %}Planos — Admin{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-4xl space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Planos</h1>
+    <p class="text-sm text-slate-600 mt-1">
+      São estes os valores oferecidos no cadastro público e na aprovação. Alterar um plano
+      não muda assinaturas já criadas no ASAAS — vale para os próximos cadastros.
+    </p>
+  </div>
+
+  {% if ok %}<div class="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>{% endif %}
+
+  <div class="card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-5 py-2.5 text-left font-medium">Plano</th>
+          <th class="px-5 py-2.5 text-left font-medium">Para</th>
+          <th class="px-5 py-2.5 text-left font-medium">Valor</th>
+          <th class="px-5 py-2.5 text-left font-medium">Ciclo</th>
+          <th class="px-5 py-2.5 text-right font-medium">Ações</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for p in planos %}
+        <tr x-data="{ editando: false }" class="{{ '' if p.ativo else 'opacity-50' }}">
+          <td class="px-5 py-3" x-show="!editando">
+            <span class="font-medium text-slate-800">{{ p.nome }}</span>
+            {% if not p.ativo %}<span class="ml-2 text-xs text-slate-500">(inativo)</span>{% endif %}
+          </td>
+          <td class="px-5 py-3 text-slate-600" x-show="!editando">{{ 'Consultoria' if p.tipo == 'consultoria' else 'Empresa' }}</td>
+          <td class="px-5 py-3 text-slate-800" x-show="!editando">{{ p.valor_centavos | brl }}</td>
+          <td class="px-5 py-3 text-slate-600" x-show="!editando">{{ p.ciclo_label }}</td>
+          <td class="px-5 py-3 text-right whitespace-nowrap" x-show="!editando">
+            <button type="button" @click="editando = true" class="mr-3 text-teal-700 hover:text-teal-900">Editar</button>
+            <form method="POST" action="{{ base_path }}/admin/planos/{{ p.id }}/desativar" class="inline">
+              <button class="text-slate-600 hover:text-slate-900">{{ 'Desativar' if p.ativo else 'Reativar' }}</button>
+            </form>
+          </td>
+          <td colspan="5" class="px-5 py-3" x-show="editando" x-cloak>
+            <form method="POST" action="{{ base_path }}/admin/planos/{{ p.id }}/editar" class="flex flex-wrap items-end gap-2">
+              <label class="flex-1 min-w-[160px]">
+                <span class="mb-1 block text-xs text-slate-500">Nome</span>
+                <input name="nome" value="{{ p.nome }}" required class="input py-1.5">
+              </label>
+              <label class="w-32">
+                <span class="mb-1 block text-xs text-slate-500">Valor (R$)</span>
+                <input name="valor" value="{{ '%.2f' | format(p.valor_centavos / 100) }}" required class="input py-1.5">
+              </label>
+              <label class="w-32">
+                <span class="mb-1 block text-xs text-slate-500">Ciclo</span>
+                <select name="ciclo" class="input py-1.5">
+                  {% for valor, rotulo in ciclos.items() %}
+                  <option value="{{ valor }}" {% if valor == p.ciclo %}selected{% endif %}>{{ rotulo }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="w-20">
+                <span class="mb-1 block text-xs text-slate-500">Ordem</span>
+                <input name="ordem" type="number" value="{{ p.ordem }}" class="input py-1.5">
+              </label>
+              <button class="btn-primary px-4 py-1.5">Salvar</button>
+              <button type="button" @click="editando = false" class="btn-secondary px-4 py-1.5">Cancelar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">Nenhum plano cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-3">Novo plano</h2>
+    <form method="POST" action="{{ base_path }}/admin/planos" class="flex flex-wrap items-end gap-3">
+      <label class="flex-1 min-w-[180px]">
+        <span class="mb-1 block text-xs font-medium text-slate-600">Nome</span>
+        <input name="nome" required placeholder="Ex.: NR-1 Essencial" class="input">
+      </label>
+      <label class="w-32">
+        <span class="mb-1 block text-xs font-medium text-slate-600">Valor (R$)</span>
+        <input name="valor" required placeholder="197,00" class="input">
+      </label>
+      <label class="w-40">
+        <span class="mb-1 block text-xs font-medium text-slate-600">Para</span>
+        <select name="tipo" class="input">
+          <option value="empresa">Empresa</option>
+          <option value="consultoria">Consultoria</option>
+        </select>
+      </label>
+      <label class="w-32">
+        <span class="mb-1 block text-xs font-medium text-slate-600">Ciclo</span>
+        <select name="ciclo" class="input">
+          {% for valor, rotulo in ciclos.items() %}
+          <option value="{{ valor }}">{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn-primary px-5">Criar plano</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -6,11 +6,16 @@
   <title>{% block title %}Strategic AI{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ base_path }}/assets/favicon-sai.png">
   <script src="https://cdn.tailwindcss.com"></script>
+  {# Alpine é usado pelo wizard de cadastro público (duas etapas em um só POST). #}
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ base_path }}/static/style.css">
-  <style> body { font-family: 'Inter', system-ui, sans-serif; } </style>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    [x-cloak] { display: none !important; }
+  </style>
 </head>
 
 {% macro pwfield(name, id, placeholder='', minlength='') %}

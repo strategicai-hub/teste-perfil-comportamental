@@ -1,8 +1,8 @@
 {% extends "_shell.html" %}
-{% block title %}Avaliação NR-1 — {{ company.nome }}{% endblock %}
+{% block title %}Envio Convite — {{ company.nome }}{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-4xl">
-  <h1 class="text-2xl font-bold text-slate-900 mb-1">Avaliação NR-1</h1>
+  <h1 class="text-2xl font-bold text-slate-900 mb-1">Envio Convite</h1>
   <p class="text-sm text-slate-600 mb-6">
     Envie o teste de riscos psicossociais para os colaboradores e acompanhe as respostas.
   </p>
@@ -15,7 +15,7 @@
   {% endif %}
 
   {% if campanha and campanha.aberta %}
-  <!-- ================= CAMPANHA EM ANDAMENTO ================= -->
+  <!-- ================= TESTE EM ANDAMENTO ================= -->
   <div class="card p-6 mb-6">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
@@ -27,41 +27,104 @@
       <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">Aberto</span>
     </div>
 
-    <div class="mt-5 grid grid-cols-3 gap-4 text-center">
-      <div class="rounded-lg bg-slate-50 p-3">
-        <div class="text-2xl font-bold text-slate-900">{{ campanha.total }}</div>
-        <div class="text-xs text-slate-500">convidados</div>
+    <!-- Progresso sobre quem REALMENTE recebeu o link -->
+    <div class="mt-5">
+      <div class="flex items-end justify-between mb-1.5">
+        <span class="text-sm font-medium text-slate-700">
+          {{ campanha.responderam }} de {{ campanha.recebidos }} já responderam
+        </span>
+        <span class="text-2xl font-bold text-teal-700 leading-none">{{ campanha.perc }}%</span>
       </div>
-      <div class="rounded-lg bg-slate-50 p-3">
-        <div class="text-2xl font-bold text-teal-700">{{ campanha.responderam }}</div>
-        <div class="text-xs text-slate-500">responderam</div>
+      <div class="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+        <div class="h-3 rounded-full bg-teal-600 transition-all" style="width: {{ campanha.perc }}%"></div>
       </div>
-      <div class="rounded-lg bg-slate-50 p-3">
-        <div class="text-2xl font-bold text-slate-400">{{ campanha.pendentes }}</div>
-        <div class="text-xs text-slate-500">faltam responder</div>
-      </div>
+      <p class="mt-1.5 text-xs text-slate-500">
+        Percentual calculado sobre quem recebeu o link por e-mail.
+        {% if campanha.falhas %}{{ campanha.falhas }} e-mail(s) não foram entregues e ficam de fora da conta.{% endif %}
+      </p>
     </div>
 
-    {% if campanha.total %}
-    <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-      <div class="h-2 rounded-full bg-teal-600" style="width: {{ (campanha.responderam * 100 // campanha.total) }}%"></div>
+    <div class="mt-5 grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+      {% for item in [
+          {'valor': campanha.total, 'rotulo': 'na lista', 'cor': 'text-slate-900'},
+          {'valor': campanha.recebidos, 'rotulo': 'receberam o link', 'cor': 'text-slate-900'},
+          {'valor': campanha.responderam, 'rotulo': 'responderam', 'cor': 'text-teal-700'},
+          {'valor': campanha.nao_responderam, 'rotulo': 'faltam responder', 'cor': 'text-amber-600'}] %}
+      <div class="rounded-lg bg-slate-50 p-3">
+        <div class="text-2xl font-bold {{ item.cor }}">{{ item.valor }}</div>
+        <div class="text-xs text-slate-500">{{ item.rotulo }}</div>
+      </div>
+      {% endfor %}
     </div>
-    {% endif %}
 
     <div class="mt-5 flex flex-wrap gap-3">
       <a href="{{ base_path }}/empresa/resultados" class="btn-secondary">Ver o gráfico das respostas</a>
-      {% if campanha.pendentes %}
-      <form method="POST" action="{{ base_path }}/empresa/avaliacao/reenviar">
-        <button type="submit" class="btn-secondary">Reenviar convite para quem não respondeu</button>
+      {% if campanha.nao_responderam %}
+      <form method="POST" action="{{ base_path }}/empresa/avaliacao/reengajar">
+        <button type="submit" class="btn-primary">Reenviar e-mail para reengajamento</button>
       </form>
       {% endif %}
     </div>
 
     {% if campanha.falhas %}
     <p class="mt-4 text-sm text-amber-700">
-      {{ campanha.falhas }} convite(s) não puderam ser enviados. Confira os e-mails marcados abaixo.
+      {{ campanha.falhas }} convite(s) não puderam ser enviados. Confira os e-mails marcados na lista abaixo.
     </p>
     {% endif %}
+  </div>
+
+  <!-- Adicionar quem ficou de fora -->
+  <div class="card p-6 mb-6" x-data="{ modo: 'um' }">
+    <h3 class="text-base font-semibold text-slate-900">Faltou alguém?</h3>
+    <p class="mt-1 text-sm text-slate-600">
+      Adicione quem não estava na planilha. A pessoa recebe o link na hora e entra no mesmo teste.
+    </p>
+
+    <div class="mt-4 flex gap-1 border-b border-slate-200">
+      <button type="button" @click="modo = 'um'"
+              class="px-4 py-2 text-sm font-semibold -mb-px border-b-2"
+              :class="modo === 'um' ? 'text-teal-700 border-teal-700' : 'text-slate-500 border-transparent'">
+        Uma pessoa
+      </button>
+      <button type="button" @click="modo = 'lote'"
+              class="px-4 py-2 text-sm font-semibold -mb-px border-b-2"
+              :class="modo === 'lote' ? 'text-teal-700 border-teal-700' : 'text-slate-500 border-transparent'">
+        Várias de uma vez
+      </button>
+    </div>
+
+    <form method="POST" action="{{ base_path }}/empresa/avaliacao/adicionar" x-show="modo === 'um'" class="mt-4 space-y-3">
+      <div class="grid gap-3 sm:grid-cols-3">
+        <label class="block">
+          <span class="label">Nome</span>
+          <input name="nome" required class="input">
+        </label>
+        <label class="block">
+          <span class="label">E-mail</span>
+          <input name="email" type="email" required class="input">
+        </label>
+        <label class="block">
+          <span class="label">Área</span>
+          <input name="area" required list="lista-areas" class="input">
+          <datalist id="lista-areas">
+            {% for a in areas %}<option value="{{ a }}">{% endfor %}
+          </datalist>
+        </label>
+      </div>
+      <button class="btn-primary">Enviar convite</button>
+    </form>
+
+    <form method="POST" action="{{ base_path }}/empresa/avaliacao/adicionar-lote" x-show="modo === 'lote'" x-cloak class="mt-4 space-y-3">
+      <label class="block">
+        <span class="label">Uma pessoa por linha: nome; e-mail; área</span>
+        <textarea name="lista" rows="5" required class="input font-mono text-sm"
+                  placeholder="Ana Souza; ana@empresa.com; Comercial&#10;Bruno Lima; bruno@empresa.com; Operações"></textarea>
+      </label>
+      <p class="text-xs text-slate-500">
+        Quem já está na lista é ignorado — ninguém recebe dois links.
+      </p>
+      <button class="btn-primary">Enviar convites</button>
+    </form>
   </div>
 
   <div class="card p-6">
@@ -87,6 +150,10 @@
                 <span class="text-xs font-semibold text-teal-700">Respondeu</span>
               {% elif c.erro %}
                 <span class="text-xs font-semibold text-red-600" title="{{ c.erro }}">Falha no envio</span>
+              {% elif not c.recebeu %}
+                <span class="text-xs text-slate-400">Enviando…</span>
+              {% elif c.reengajado %}
+                <span class="text-xs text-amber-600">Lembrete enviado</span>
               {% else %}
                 <span class="text-xs text-slate-400">Aguardando</span>
               {% endif %}
@@ -102,14 +169,14 @@
   </div>
 
   {% else %}
-  <!-- ================= NOVA CAMPANHA ================= -->
+  <!-- ================= NOVO ENVIO ================= -->
   {% if campanha %}
   <div class="card p-6 mb-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="text-base font-semibold text-slate-900">Último teste encerrado em {{ campanha.fim }}</h2>
         <p class="text-sm text-slate-600 mt-1">
-          {{ campanha.responderam }} de {{ campanha.total }} colaboradores responderam.
+          {{ campanha.responderam }} de {{ campanha.recebidos }} colaboradores responderam ({{ campanha.perc }}%).
         </p>
       </div>
       <a href="{{ base_path }}/empresa/resultados?aba=relatorio" class="btn-secondary">Ver o relatório</a>
@@ -125,11 +192,22 @@
     </p>
 
     <div class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Como a planilha deve estar</div>
-      <p class="mt-2 text-sm text-slate-600">
-        Três colunas na primeira linha: <strong>Nome</strong>, <strong>E-mail</strong> e <strong>Área</strong>.
-        Aceita arquivos <code>.xlsx</code> e <code>.csv</code>. Áreas que ainda não existem são criadas automaticamente.
-      </p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Como a planilha deve estar</div>
+          <p class="mt-2 text-sm text-slate-600">
+            Três colunas na primeira linha: <strong>Nome</strong>, <strong>E-mail</strong> e <strong>Área</strong>.
+            Aceita <code>.xlsx</code> e <code>.csv</code>. Áreas novas são criadas automaticamente.
+          </p>
+          <p class="mt-1.5 text-sm text-slate-500">
+            Se sua planilha usa outros títulos, não tem problema: a gente pergunta qual coluna é qual.
+          </p>
+        </div>
+        <a href="{{ base_path }}/empresa/avaliacao/modelo.xlsx" class="btn-secondary whitespace-nowrap text-sm">
+          Baixar planilha modelo
+        </a>
+      </div>
+
       <table class="mt-3 text-xs text-slate-600">
         <tr class="font-semibold text-slate-700">
           <td class="border border-slate-300 px-3 py-1">Nome</td>

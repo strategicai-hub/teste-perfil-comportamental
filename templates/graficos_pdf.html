@@ -1,0 +1,170 @@
+{# PDF do painel de gráficos. Mesma identidade do relatorio_pdf.html, com o layout
+   das barras reescrito em pt/mm e SEM flexbox nem utilitários do Tailwind: o
+   WeasyPrint não executa o Tailwind (é JS via CDN) e renderiza flex mal. As barras
+   usam largura em % dentro de uma célula de tabela, que ele resolve corretamente. #}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Gráficos NR-1 — {{ company.nome }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm 16mm;
+    @bottom-center {
+      content: "SAI · Panorama do Teste Psicossocial (COPSOQ II / NR-1) — " counter(page) "/" counter(pages);
+      font-size: 8pt; color: #94a3b8;
+    }
+    @bottom-right { content: "Confidencial"; font-size: 8pt; color: #cbd5e1; }
+  }
+  @page :first { margin: 0; }
+
+  body {
+    font-family: "DejaVu Sans", Arial, Helvetica, sans-serif;
+    color: #334155; font-size: 10pt; line-height: 1.5; margin: 0;
+  }
+
+  /* --- Capa --- */
+  .capa {
+    background: linear-gradient(160deg, #0b4f4a 0%, #0e7c72 60%, #17a89a 100%);
+    color: #ffffff; height: 297mm; padding: 60mm 20mm 20mm 20mm;
+    box-sizing: border-box; page-break-after: always;
+  }
+  .capa .eyebrow { font-size: 9pt; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.85; }
+  .capa h1 { font-size: 30pt; line-height: 1.15; margin: 8mm 0 0 0; font-weight: 800; }
+  .capa .rule { width: 22mm; height: 3px; background: #ffd166; margin: 7mm 0; }
+  .capa p { font-size: 11pt; opacity: 0.92; max-width: 120mm; }
+  .capa .tags { margin-top: 10mm; }
+  .capa .tag {
+    display: inline-block; border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.12); border-radius: 999px;
+    padding: 2mm 5mm; font-size: 9pt; font-weight: 700; margin: 0 2mm 2mm 0;
+  }
+  .capa .rodape {
+    position: absolute; bottom: 22mm; left: 20mm; right: 20mm;
+    border-top: 1px solid rgba(255,255,255,0.25); padding-top: 4mm; font-size: 8.5pt; opacity: 0.85;
+  }
+
+  /* --- Um painel por recorte (geral, cada área) --- */
+  .painel + .painel { page-break-before: always; }
+  .painel-title {
+    font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: -0.01em;
+    margin: 0 0 2mm 0; padding-left: 3.5mm; border-left: 1.6mm solid #0e7c72; line-height: 1.25;
+  }
+  .painel-meta { font-size: 9pt; color: #64748b; margin: 0 0 5mm 3.5mm; }
+
+  .legenda { margin: 0 0 6mm 0; font-size: 8.5pt; color: #475569; }
+  .legenda .item { display: inline-block; margin-right: 6mm; }
+  .legenda .bolinha {
+    display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 999px;
+    margin-right: 1.5mm; vertical-align: middle;
+  }
+
+  .bloco { margin-bottom: 6mm; page-break-inside: avoid; }
+  .bloco-head { margin-bottom: 2.5mm; }
+  .bloco-nome { font-size: 11.5pt; font-weight: 800; color: #0e7c72; }
+  .bloco-pill {
+    display: inline-block; padding: 0.6mm 2.6mm; border-radius: 999px;
+    font-weight: 700; font-size: 8pt; margin-left: 2.5mm; vertical-align: middle;
+  }
+
+  table.barras { width: 100%; border-collapse: collapse; }
+  table.barras td { padding: 1.1mm 0; vertical-align: middle; }
+  td.rotulo { width: 38%; padding-right: 3mm; }
+  .rotulo-nome { font-size: 9pt; color: #1e293b; line-height: 1.25; }
+  .rotulo-dir { font-size: 7.5pt; color: #94a3b8; }
+  td.trilho-cel { width: 42%; padding-right: 3mm; }
+  td.escore { width: 8%; text-align: right; font-size: 9.5pt; font-weight: 800; padding-right: 2mm; }
+  td.nivel { width: 12%; text-align: right; }
+  .nivel-pill {
+    display: inline-block; padding: 0.5mm 2.2mm; border-radius: 999px;
+    border: 0.4pt solid; font-size: 7.5pt; font-weight: 700; white-space: nowrap;
+  }
+
+  /* Trilho: div externa com fundo, interna com largura em % = o escore. */
+  .trilho { height: 3.4mm; border-radius: 999px; background: #eef2f1; position: relative; }
+  .trilho .preenchido { height: 3.4mm; border-radius: 999px; }
+  .trilho .corte { position: absolute; top: 0; height: 3.4mm; width: 0.3mm; background: #ffffff; }
+</style>
+</head>
+<body>
+
+<div class="capa">
+  <div class="eyebrow">SAI · Solução NR-1 · Panorama de resultados</div>
+  <h1>Panorama do Teste<br>Psicossocial — COPSOQ II</h1>
+  <div class="rule"></div>
+  <p>
+    Leitura rápida de todas as dimensões avaliadas, agrupadas nos 8 blocos do
+    instrumento{% if escopo %}, no recorte da área {{ escopo }}{% else %}, no geral da empresa e por área{% endif %}.
+  </p>
+  <div class="tags">
+    <span class="tag">{{ company.nome }}</span>
+    {% if paineis %}<span class="tag">n = {{ paineis[0].agg.respondentes }} respondentes</span>{% endif %}
+    {% if campanha %}
+      <span class="tag">
+        {% if campanha.aberta %}Teste aberto até {{ campanha.fim }}{% else %}Teste encerrado em {{ campanha.fim }}{% endif %}
+      </span>
+    {% endif %}
+    <span class="tag">Emitido em {{ gerado_em }}</span>
+  </div>
+  <div class="rodape">
+    <strong>Documento confidencial — uso interno.</strong><br>
+    Instrumento COPSOQ II (Kristensen, 2005; adaptação portuguesa de Silva et al., 2011).
+    Referências normativas: NR-1 (GRO/PGR) e ISO 45003:2021.
+  </div>
+</div>
+
+{% for p in paineis %}
+<div class="painel">
+  <h2 class="painel-title">{{ p.titulo }}</h2>
+  <p class="painel-meta">{{ p.agg.respondentes }} respondente(s) · escore de 0 a 100</p>
+
+  <div class="legenda">
+    <span class="item"><span class="bolinha" style="background:{{ nivel_cor.verde }}"></span>Favorável</span>
+    <span class="item"><span class="bolinha" style="background:{{ nivel_cor.amarelo }}"></span>Atenção</span>
+    <span class="item"><span class="bolinha" style="background:{{ nivel_cor.vermelho }}"></span>Risco alto</span>
+    <span class="item" style="color:#94a3b8">Marcas na barra: cortes de 33 e 66.</span>
+  </div>
+
+  {% for bloco in p.blocos %}
+  <div class="bloco">
+    <div class="bloco-head">
+      <span class="bloco-nome">{{ bloco.numero }}. {{ bloco.nome }}</span>
+      <span class="bloco-pill"
+            style="color: {{ nivel_cor.get(bloco.nivel, '#64748b') }}; background: {{ nivel_cor.get(bloco.nivel, '#64748b') }}1f;">
+        {{ bloco.nivel_label }}
+      </span>
+    </div>
+
+    <table class="barras">
+      {% for ind in bloco.indicadores %}
+      <tr>
+        <td class="rotulo">
+          <div class="rotulo-nome">{{ ind.nome }}</div>
+          <div class="rotulo-dir">{{ ind.direcao_label }}</div>
+        </td>
+        <td class="trilho-cel">
+          <div class="trilho">
+            <div class="preenchido"
+                 style="width: {{ ind.escore }}%; background: {{ nivel_cor.get(ind.nivel, '#94a3b8') }};"></div>
+            <span class="corte" style="left:33.3%"></span>
+            <span class="corte" style="left:66.6%"></span>
+          </div>
+        </td>
+        <td class="escore" style="color: {{ nivel_cor.get(ind.nivel, '#64748b') }}">{{ ind.escore }}</td>
+        <td class="nivel">
+          <span class="nivel-pill"
+                style="color: {{ nivel_cor.get(ind.nivel, '#64748b') }}; border-color: {{ nivel_cor.get(ind.nivel, '#64748b') }}55;">
+            {{ ind.nivel_label }}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+</body>
+</html>

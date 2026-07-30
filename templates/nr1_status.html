@@ -2,6 +2,7 @@
 {% block title %}
 {%- if estado == 'respondido' %}Respostas enviadas
 {%- elif estado == 'encerrado' %}Prazo encerrado
+{%- elif estado == 'indisponivel' %}Teste indisponível
 {%- else %}Link inválido{% endif -%}
 {% endblock %}
 {% block content %}
@@ -33,6 +34,23 @@
     </p>
     <p class="mt-3 text-sm text-slate-500">
       Se você acha que houve um engano, fale com o responsável na {{ empresa or 'sua empresa' }}.
+    </p>
+
+  {% elif estado == 'indisponivel' %}
+    {# Acesso da empresa suspenso (cadastro não liberado ou fatura em atraso). O texto
+       não menciona pagamento: quem lê é o colaborador, não quem contrata. #}
+    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+      <svg class="h-7 w-7 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-2.99l-6.93-12a2 2 0 00-3.48 0l-6.93 12A2 2 0 005.07 19z"/>
+      </svg>
+    </div>
+    <h1 class="mt-5 text-2xl font-bold text-slate-900">Este teste está indisponível</h1>
+    <p class="mt-3 text-slate-600 leading-relaxed">
+      A avaliação{% if empresa %} da {{ empresa }}{% endif %} está temporariamente pausada.
+    </p>
+    <p class="mt-3 text-sm text-slate-500">
+      Guarde este link: assim que for reativada, ele volta a funcionar. Em caso de dúvida,
+      fale com o responsável na {{ empresa or 'sua empresa' }}.
     </p>
 
   {% else %}

@@ -44,25 +44,38 @@
     </a>
   </div>
 
-  {% if aba == 'grafico' %}
-  <!-- ============================ ABA GRÁFICO ============================ -->
+  {# Chips de recorte por área — valem nas duas abas. #}
+  {% macro chips(aba_atual) %}
   <div class="flex flex-wrap gap-2 mb-6">
-    <a href="{{ url_base }}?aba=grafico"
+    <a href="{{ url_base }}?aba={{ aba_atual }}"
        class="rounded-full px-4 py-1.5 text-sm font-medium {{ 'bg-teal-700 text-white' if not scope else 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400' }}">
       Geral ({{ total_respondentes }})
     </a>
     {% for a in areas %}
-    <a href="{{ url_base }}?aba=grafico&area={{ a.nome | urlencode }}"
+    <a href="{{ url_base }}?aba={{ aba_atual }}&area={{ a.nome | urlencode }}"
        class="rounded-full px-4 py-1.5 text-sm font-medium {{ 'bg-teal-700 text-white' if scope == a.nome else 'bg-white border border-slate-200 text-slate-700 hover:border-teal-400' }}">
       {{ a.nome }} ({{ a.respondentes }})
     </a>
     {% endfor %}
   </div>
+  {% endmacro %}
+
+  {% if aba == 'grafico' %}
+  <!-- ============================ ABA GRÁFICO ============================ -->
+  {{ chips('grafico') }}
 
   <div class="card p-6">
-    <div class="flex items-center justify-between mb-1">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
       <h2 class="text-lg font-semibold text-slate-900">Panorama de resultados</h2>
-      <span class="text-sm text-slate-500">{{ agg.respondentes }} respondente(s)</span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-slate-500">{{ agg.respondentes }} respondente(s)</span>
+        {% if pdf_disponivel and agg.respondentes >= min_respondentes %}
+        <a href="{{ base_path }}/empresa/graficos.pdf{{ '?area=' ~ (scope | urlencode) if scope else '' }}"
+           class="btn-secondary text-sm whitespace-nowrap">
+          Baixar PDF dos gráficos
+        </a>
+        {% endif %}
+      </div>
     </div>
     <p class="text-sm text-slate-500 mb-6">
       {{ scope if scope else 'Geral da empresa' }} — leitura rápida de todas as dimensões, agrupadas por item macro.
@@ -87,6 +100,8 @@
 
   {% else %}
   <!-- =========================== ABA RELATÓRIO =========================== -->
+  {% if relatorio_liberado %}{{ chips('relatorio') }}{% endif %}
+
   {% if not relatorio_liberado or not secoes or secoes[0].resumo.respondentes < min_respondentes %}
   <div class="card p-6">
     {% if not relatorio_liberado %}
@@ -105,8 +120,14 @@
 
     {% else %}
       <p class="text-center text-slate-500 py-10">
-        Ainda não há respostas suficientes para gerar o relatório
-        (mínimo de {{ min_respondentes }} respondentes).
+        {% if scope %}
+          A área <strong>{{ scope }}</strong> ainda não tem respostas suficientes para um relatório
+          próprio (mínimo de {{ min_respondentes }} respondentes, para preservar o anonimato).
+          <br><a href="{{ url_base }}?aba=relatorio" class="text-teal-700 hover:text-teal-900">Ver o consolidado geral</a>
+        {% else %}
+          Ainda não há respostas suficientes para gerar o relatório
+          (mínimo de {{ min_respondentes }} respondentes).
+        {% endif %}
       </p>
     {% endif %}
   </div>
@@ -116,16 +137,24 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-xl font-bold text-slate-900">Relatório de análise</h2>
-          <p class="text-sm text-slate-500 mt-0.5">Consolidado geral e por área, com base no COPSOQ II.</p>
+          <p class="text-sm text-slate-500 mt-0.5">
+            {% if scope %}Área {{ scope }} — com base no COPSOQ II.
+            {% else %}Consolidado geral da empresa — com base no COPSOQ II.{% endif %}
+          </p>
         </div>
         {% if pdf_disponivel %}
         <a href="{{ base_path }}/empresa/relatorio.pdf" class="btn-primary">
-          Baixar PDF do consolidado da empresa
+          Baixar PDF completo
         </a>
         {% else %}
         <span class="text-xs text-slate-400">Download em PDF indisponível neste ambiente.</span>
         {% endif %}
       </div>
+      {% if pdf_disponivel %}
+      <p class="mt-2 text-xs text-slate-400">
+        O PDF traz sempre o consolidado geral mais todas as áreas, independente do recorte na tela.
+      </p>
+      {% endif %}
     </div>
 
     {% include "_report_body.html" %}
