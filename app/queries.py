@@ -9,7 +9,7 @@ import json
 from . import auth
 from .copsoq import report as copsoq_report, scoring as copsoq_scoring
 from .db import Campaign, CampaignInvite, Company, CompanyArea, Lead, User, get_session
-from .tests_engine import COPSOQ_TEST_ID
+from .tests_engine import COPSOQ_TEST_ID, COPSOQ_TEST_IDS
 from .web.deps import MIN_RESPONDENTES, fmt_data
 
 
@@ -49,7 +49,7 @@ def copsoq_leads(s, company_id: str, area: str | None = None, campaign_id: str |
     """Leads COPSOQ concluídos que entram no resultado do recorte."""
     q = s.query(Lead).filter(
         Lead.company_id == company_id,
-        Lead.test_id == COPSOQ_TEST_ID,
+        Lead.test_id.in_(COPSOQ_TEST_IDS),
         Lead.concluido_em.isnot(None),
     )
     if campaign_id:
@@ -113,6 +113,9 @@ def campanha_ctx(campaign: Campaign | None, invites_rows: list[CampaignInvite] |
         "falhas": sum(1 for i in rows if i.erro_envio),
         "recebidos": recebidos,
         "perc": round(responderam * 100 / base) if base else 0,
+        # Versão aplicada nesta campanha (a curta é o padrão; a longa, sob demanda).
+        "versao": "longa" if campaign.test_id == COPSOQ_TEST_ID else "curta",
+        "total_perguntas": 119 if campaign.test_id == COPSOQ_TEST_ID else 41,
         "nao_responderam": max(recebidos - responderam, 0),
     }
 

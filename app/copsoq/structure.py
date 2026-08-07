@@ -96,6 +96,56 @@ SUBDIMENSIONS: list[dict] = [
     {"key": "comportamentos_ofensivos", "nome": "Comportamentos ofensivos", "dominio": "comportamentos_ofensivos", "items": [114, 115, 116, 117, 118, 119], "reverse": [], "direcao": "risco"},
 ]
 
+# --- Versão curta (41 itens) -------------------------------------------------
+# COPSOQ II – Versão Curta (Kristensen, 2001; tradução Silva, C. et al., 2011).
+# Os 41 itens da versão curta são um SUBCONJUNTO da versão longa: cada item curto
+# corresponde a um item longo (mesmo enunciado, mesma escala, mesma subescala).
+# Guardar a correspondência — em vez de uma numeração própria — é o que permite
+# usar as mesmas perguntas, o mesmo escoreamento, a mesma base de conhecimento e
+# comparar resultados das duas versões no mesmo painel.
+#
+# A ordem da lista é a ordem do questionário curto (item 1 do PDF curto = 1º).
+SHORT_ORDER: list[int] = [
+    1, 2,            # exigências quantitativas
+    4,               # ritmo de trabalho
+    5, 7,            # exigências cognitivas
+    9,               # exigências emocionais
+    15,              # influência no trabalho
+    19, 20,          # possibilidades de desenvolvimento
+    23, 24,          # previsibilidade
+    26,              # clareza do papel
+    28, 31,          # recompensas / reconhecimento
+    40,              # apoio social de superiores
+    42,              # comunidade social no trabalho
+    45, 47,          # qualidade da liderança
+    52, 53,          # confiança vertical
+    55, 58,          # justiça e respeito
+    108,             # autoeficácia
+    63, 64,          # significado do trabalho
+    67,              # compromisso com o local de trabalho
+    72,              # satisfação no trabalho
+    73,              # insegurança laboral
+    77,              # saúde geral
+    78, 79,          # conflito trabalho–família
+    86,              # problemas de sono
+    89, 90,          # burnout
+    92, 94,          # estresse
+    95,              # sintomas depressivos
+    116, 117, 118, 119,  # comportamentos ofensivos
+]
+
+SHORT_ITEMS: set[int] = set(SHORT_ORDER)
+
+# Subescalas da versão curta: as mesmas chaves, com os itens restritos ao que a
+# versão curta pergunta. As 9 subescalas sem nenhum item curto saem da lista (é
+# assim que o relatório da versão curta mostra 26 indicadores em vez de 35).
+SUBDIMENSIONS_CURTA: list[dict] = [
+    {**sub, "items": [n for n in sub["items"] if n in SHORT_ITEMS],
+     "reverse": [n for n in sub["reverse"] if n in SHORT_ITEMS]}
+    for sub in SUBDIMENSIONS
+    if any(n in SHORT_ITEMS for n in sub["items"])
+]
+
 # Conjunto de todos os números de item invertidos (49, 50, 54).
 REVERSE_ITEMS: set[int] = {n for sub in SUBDIMENSIONS for n in sub["reverse"]}
 
@@ -104,3 +154,4 @@ CUTOFF_VERDE = 100 / 3       # ~33,3  → abaixo disto: risco baixo (verde)
 CUTOFF_VERMELHO = 200 / 3    # ~66,6  → acima disto: risco alto (vermelho)
 
 TOTAL_ITENS = 119
+TOTAL_ITENS_CURTA = len(SHORT_ORDER)  # 41

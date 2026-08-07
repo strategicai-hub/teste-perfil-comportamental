@@ -1,11 +1,14 @@
-"""Os 119 itens do COPSOQ II (versão longa) adaptados para o português brasileiro.
+"""Os 119 itens do COPSOQ II adaptados para o português brasileiro.
+
+`QUESTIONS` é a versão longa (119 itens); `QUESTIONS_CURTA` é a versão curta
+(41 itens), um recorte da mesma lista — ver `structure.SHORT_ORDER`.
 
 Cada item tem: id ("q1".."q119"), n (número no PDF), prompt, scale (escala de
 resposta) e secao (linha de contexto exibida acima do enunciado, quando houver).
 As opções (valor "1".."5" + rótulo) são derivadas da escala.
 """
 
-from .structure import SCALES
+from .structure import SCALES, SHORT_ORDER
 
 
 def _options(scale_key: str) -> list[dict]:
@@ -152,3 +155,12 @@ QUESTIONS: list[dict] = [
 ]
 
 QUESTION_IDS: list[str] = [q["id"] for q in QUESTIONS]
+
+# --- Versão curta (41 itens) -------------------------------------------------
+# Mesmos enunciados, mesmas escalas e os MESMOS ids ("q1", "q4", ...) da versão
+# longa — só muda quais perguntas são feitas e em que ordem. Manter os ids é o
+# que deixa a resposta de uma versão comparável com a da outra.
+_BY_N = {q["n"]: q for q in QUESTIONS}
+
+QUESTIONS_CURTA: list[dict] = [_BY_N[n] for n in SHORT_ORDER]
+QUESTION_IDS_CURTA: list[str] = [q["id"] for q in QUESTIONS_CURTA]

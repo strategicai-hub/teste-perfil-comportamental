@@ -21,7 +21,8 @@
       <div>
         <h2 class="text-lg font-semibold text-slate-900">Teste em andamento</h2>
         <p class="text-sm text-slate-600 mt-1">
-          Enviado em <strong>{{ campanha.inicio }}</strong> · recebe respostas até <strong>{{ campanha.fim }}</strong>.
+          Enviado em <strong>{{ campanha.inicio }}</strong> · recebe respostas até <strong>{{ campanha.fim }}</strong>
+          · versão {{ 'completa' if campanha.versao == 'longa' else 'padrão' }} ({{ campanha.total_perguntas }} perguntas).
         </p>
       </div>
       <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">Aberto</span>
@@ -239,6 +240,31 @@
           A data de início é registrada automaticamente no envio dos convites. Depois da data de fim
           o teste para de receber respostas e o relatório é liberado.
         </p>
+      </div>
+      <div>
+        <span class="label">Versão do questionário</span>
+        <div class="mt-1 space-y-2">
+          <label class="flex items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 cursor-pointer hover:border-slate-300">
+            <input type="radio" name="versao" value="curta" class="mt-1"
+                   {{ 'checked' if versao_atual != 'longa' }}>
+            <span>
+              <span class="block text-sm font-semibold text-slate-800">Padrão — 41 perguntas</span>
+              <span class="block text-xs text-slate-500">
+                Cerca de 10 minutos para responder. Cobre os 8 grandes temas exigidos pela NR-1.
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 cursor-pointer hover:border-slate-300">
+            <input type="radio" name="versao" value="longa" class="mt-1"
+                   {{ 'checked' if versao_atual == 'longa' }}>
+            <span>
+              <span class="block text-sm font-semibold text-slate-800">Completa — 119 perguntas</span>
+              <span class="block text-xs text-slate-500">
+                Cerca de 25 minutos. Traz todos os indicadores do questionário original.
+              </span>
+            </span>
+          </label>
+        </div>
       </div>
       <button type="submit" class="btn-primary">Revisar e enviar convites</button>
     </form>

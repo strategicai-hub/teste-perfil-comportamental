@@ -15,6 +15,7 @@
                     area: '{{ mapa.area if mapa.area is not none else '' }}' }">
       <input type="hidden" name="grade_json" value="{{ grade_json | e }}">
       <input type="hidden" name="data_fim" value="{{ data_fim }}">
+      <input type="hidden" name="versao" value="{{ versao }}">
 
       {% for campo in [
           {'chave': 'nome',  'campo': 'col_nome',  'rotulo': 'Nome do colaborador', 'modelo': 'nome'},

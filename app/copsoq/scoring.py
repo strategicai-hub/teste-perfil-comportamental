@@ -17,8 +17,18 @@ from .structure import (
     CUTOFF_VERMELHO,
     DOMAINS,
     SUBDIMENSIONS,
+    SUBDIMENSIONS_CURTA,
 )
-from .questions import QUESTION_IDS
+from .questions import QUESTION_IDS, QUESTION_IDS_CURTA
+
+# Cada versão do questionário tem seu conjunto de subescalas (a curta cobre 26 das
+# 35, com menos itens em cada uma). O corte "metade dos itens respondidos" de
+# `_subscale_score` precisa contar sobre os itens da versão respondida, não sobre
+# os 119 — daí a lista vir por versão em vez de ser fixa.
+_POR_VERSAO = {
+    "longa": (SUBDIMENSIONS, QUESTION_IDS),
+    "curta": (SUBDIMENSIONS_CURTA, QUESTION_IDS_CURTA),
+}
 
 
 def _nivel(risco_score: float | None) -> str | None:
@@ -74,10 +84,11 @@ def _domains_from_subscales(subs_out: list[dict]) -> list[dict]:
     return out
 
 
-def calculate(answers: dict) -> dict:
+def calculate(answers: dict, versao: str = "longa") -> dict:
     """Resultado individual do COPSOQ a partir das respostas (qid -> '1'..'5')."""
+    subdimensions, question_ids = _POR_VERSAO.get(versao, _POR_VERSAO["longa"])
     subs_out: list[dict] = []
-    for sub in SUBDIMENSIONS:
+    for sub in subdimensions:
         score = _subscale_score(sub, answers)
         risco = _risco(score, sub["direcao"])
         subs_out.append({
@@ -90,7 +101,7 @@ def calculate(answers: dict) -> dict:
             "nivel": _nivel(risco),
         })
 
-    answered = sum(1 for qid in QUESTION_IDS if answers.get(qid) is not None)
+    answered = sum(1 for qid in question_ids if answers.get(qid) is not None)
     ranked = sorted(
         (s for s in subs_out if s["risco_score"] is not None),
         key=lambda s: s["risco_score"],
@@ -102,6 +113,7 @@ def calculate(answers: dict) -> dict:
     ]
     return {
         "type": "copsoq",
+        "versao": versao,
         "answered": answered,
         "subscales": subs_out,
         "domains": _domains_from_subscales(subs_out),

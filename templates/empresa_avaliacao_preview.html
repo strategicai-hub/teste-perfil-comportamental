@@ -24,7 +24,9 @@
     </div>
 
     <p class="mt-5 text-sm text-slate-700">
-      O teste vai receber respostas de hoje até <strong>{{ data_fim_br }}</strong>.
+      O teste vai receber respostas de hoje até <strong>{{ data_fim_br }}</strong>, na versão
+      <strong>{{ 'completa' if versao == 'longa' else 'padrão' }}</strong>
+      ({{ total_perguntas }} perguntas).
     </p>
 
     {% if areas_novas %}
@@ -80,6 +82,7 @@
     <form method="POST" action="{{ base_path }}/empresa/avaliacao/enviar">
       <input type="hidden" name="payload" value="{{ payload }}">
       <input type="hidden" name="data_fim" value="{{ data_fim }}">
+      <input type="hidden" name="versao" value="{{ versao }}">
       <button type="submit" class="btn-primary">Confirmar e enviar os convites</button>
     </form>
     <a href="{{ base_path }}/empresa/avaliacao" class="btn-secondary">Cancelar</a>

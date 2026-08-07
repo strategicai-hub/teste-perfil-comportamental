@@ -2,7 +2,19 @@
 
 Aplicação web que substitui a página Wix `strategicai.com.br/teste-perfil-comportamental` com captação estruturada de leads, teste de 30 perguntas em wizard e chat de análise com Gemini 2.5 Pro.
 
-Hoje o teste ativo é o **COPSOQ II (NR-1 — riscos psicossociais)**, com 119 itens, 35 subescalas e 8 itens macro.
+Hoje o teste ativo é o **COPSOQ II (NR-1 — riscos psicossociais)**, em duas versões:
+
+| Versão | `test_id` | Itens | Subescalas | Quando |
+|---|---|---|---|---|
+| **Curta (padrão)** | 12 | 41 | 26 | sempre, salvo pedido do cliente |
+| Longa (completa) | 11 | 119 | 35 | só quando o cliente pede |
+
+Os 8 itens macro (domínios) são os mesmos nas duas. **A versão curta é um subconjunto
+da longa**: `structure.SHORT_ORDER` guarda a correspondência item-curto → item-longo, e por
+isso as duas compartilham enunciados, escalas, ids de pergunta (`q1`, `q4`, …), escoreamento,
+base de conhecimento e relatório — respostas das duas versões somam no mesmo painel.
+`Company.copsoq_versao` guarda a escolha da empresa (padrão `curta`) e `Campaign.test_id`
+carimba a versão aplicada, então trocar o padrão nunca mexe em campanha já criada.
 
 ## Stack
 
@@ -102,8 +114,9 @@ Token/ambiente do ASAAS ficam em `AppSetting` (tela `/admin/integracoes`) e **ve
 ## Fluxo da avaliação NR-1
 
 1. **`/empresa/avaliacao`** (na UI: **"Envio Convite"**) — o gestor baixa a planilha modelo em
-   `/empresa/avaliacao/modelo.xlsx` ou sobe a dele (`Nome`, `E-mail`, `Área`; `.xlsx` ou `.csv`)
-   e define a **data de fim**. A data de início é carimbada no envio. Áreas novas são criadas sozinhas.
+   `/empresa/avaliacao/modelo.xlsx` ou sobe a dele (`Nome`, `E-mail`, `Área`; `.xlsx` ou `.csv`),
+   escolhe a **versão do questionário** (curta pré-selecionada) e define a **data de fim**.
+   A data de início é carimbada no envio. Áreas novas são criadas sozinhas.
    - Se o cabeçalho não permite identificar as 3 colunas, cai no **wizard de mapeamento**
      (`empresa_avaliacao_mapear.html`) em vez de recusar o arquivo. `invites.py` está dividido
      em `ler_grade` → `sugerir_mapa` → `mapear_e_validar` justamente para isso.
@@ -148,7 +161,8 @@ da base). Falta apenas a interface e o export.
 
 ```bash
 python -m scripts.seed_demo --listar
-python -m scripts.seed_demo --empresa-slug <slug>
+python -m scripts.seed_demo --empresa-slug <slug>              # versão curta (padrão)
+python -m scripts.seed_demo --empresa-slug <slug> --versao longa
 ```
 
 Cria 10 respondentes em 3 áreas com respostas desenhadas para o agregado cobrir os três status

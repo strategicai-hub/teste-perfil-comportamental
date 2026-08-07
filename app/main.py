@@ -41,7 +41,15 @@ from .db import (
     init_db,
 )
 from .routers import admin_billing, consultor, faturas, publico
-from .tests_engine import COPSOQ_TEST_ID, TESTS, get_engine, get_test, is_empresa_test
+from .tests_engine import (
+    COPSOQ_TEST_ID,
+    TESTS,
+    VERSAO_PADRAO,
+    copsoq_test_id,
+    get_engine,
+    get_test,
+    is_empresa_test,
+)
 from .web import deps
 
 logging.basicConfig(level=logging.INFO)
@@ -391,6 +399,15 @@ def _redirect_for_role(role: str) -> str | None:
     if role == auth.ADMIN:
         return f"{settings.base_path}/empresa"
     return None
+
+
+def _empresa_copsoq_versao(tenant_id: str | None) -> str:
+    """Versão do COPSOQ que a empresa aplica ("curta" por padrão)."""
+    if not tenant_id:
+        return VERSAO_PADRAO
+    with get_session() as s:
+        company = s.get(Company, tenant_id)
+    return (company.copsoq_versao if company and company.copsoq_versao else VERSAO_PADRAO)
 
 
 def _user_company_context(user: User) -> dict | None:
@@ -829,8 +846,10 @@ def testes_page(request: Request):
     if redir:
         return redir
     # Os testes comportamentais estão ocultos: nenhum deles tem perguntas prontas, e
-    # exibir cards "Em breve" só gera dúvida no cliente.
-    nr1 = [t for t in TESTS if t.get("grupo") == "nr1"]
+    # exibir cards "Em breve" só gera dúvida no cliente. Do COPSOQ aparece só a
+    # versão que a empresa aplica — dois cards do mesmo teste confundiriam quem responde.
+    versao = _empresa_copsoq_versao(user.tenant_id)
+    nr1 = [t for t in TESTS if t.get("grupo") == "nr1" and t.get("versao", versao) == versao]
     aviso = user.role == auth.MEMBER and not user.tenant_id
     return templates.TemplateResponse(
         "testes.html",
@@ -1185,6 +1204,7 @@ def empresa_avaliacao(request: Request, ok: str | None = None, error: str | None
             "campanha": campanha,
             "convidados": convidados,
             "areas": areas,
+            "versao_atual": _empresa_copsoq_versao(tenant_id),
             "min_data": (deps.hoje_sp() + timedelta(days=1)).isoformat(),
             "ok": ok,
             "error": error,
@@ -1214,6 +1234,7 @@ async def empresa_avaliacao_preview(
     request: Request,
     planilha: UploadFile = File(...),
     data_fim: str = Form(...),
+    versao: str = Form(VERSAO_PADRAO),
 ):
     """Lê a planilha e mostra a prévia. Nada é gravado nesta etapa.
 
@@ -1253,6 +1274,7 @@ async def empresa_avaliacao_preview(
                 "total_linhas": len(grade) - 1,
                 "data_fim": data_fim,
                 "data_fim_br": fim.strftime("%d/%m/%Y"),
+                "versao": _versao_valida(versao),
                 "grade_json": json.dumps(grade, ensure_ascii=False),
                 **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
             },
@@ -1260,7 +1282,7 @@ async def empresa_avaliacao_preview(
 
     linhas, erros = invites.mapear_e_validar(grade, mapa)
     return _tela_preview(
-        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim
+        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim, versao
     )
 
 
@@ -1273,7 +1295,13 @@ def _valida_data_fim(data_fim: str) -> date | None:
     return fim if fim > deps.hoje_sp() else None
 
 
-def _tela_preview(request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim):
+def _versao_valida(versao: str | None) -> str:
+    """Versão do questionário vinda do formulário — cai na curta se vier qualquer outra coisa."""
+    v = (versao or "").strip().lower()
+    return v if v in ("curta", "longa") else VERSAO_PADRAO
+
+
+def _tela_preview(request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim, versao=VERSAO_PADRAO):
     """Prévia do envio: o que será criado, o que foi descartado e as áreas novas."""
     if not linhas:
         return deps.redirect(
@@ -1294,6 +1322,8 @@ def _tela_preview(request, user, tenant_id, company_data, impersonating, linhas,
             "areas_novas": areas_novas,
             "data_fim": data_fim,
             "data_fim_br": fim.strftime("%d/%m/%Y"),
+            "versao": _versao_valida(versao),
+            "total_perguntas": 41 if _versao_valida(versao) == "curta" else 119,
             "payload": json.dumps(linhas, ensure_ascii=False),
             **_shell_ctx(user, "avaliacao", impersonating=impersonating, role=auth.ADMIN),
         },
@@ -1305,6 +1335,7 @@ def empresa_avaliacao_mapear(
     request: Request,
     grade_json: str = Form(...),
     data_fim: str = Form(...),
+    versao: str = Form(VERSAO_PADRAO),
     col_nome: int = Form(...),
     col_email: int = Form(...),
     col_area: int = Form(...),
@@ -1337,7 +1368,7 @@ def empresa_avaliacao_mapear(
         return deps.redirect("/empresa/avaliacao", error=str(exc))
 
     return _tela_preview(
-        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim
+        request, user, tenant_id, company_data, impersonating, linhas, erros, data_fim, fim, versao
     )
 
 
@@ -1373,6 +1404,7 @@ def empresa_avaliacao_enviar(
     bg: BackgroundTasks,
     payload: str = Form(...),
     data_fim: str = Form(...),
+    versao: str = Form(VERSAO_PADRAO),
 ):
     """Confirma a prévia: cria a campanha, os convites e dispara os e-mails."""
     user, tenant_id, _company_data, _imp, redir = deps.gestor_page(request)
@@ -1400,10 +1432,16 @@ def empresa_avaliacao_enviar(
             return falhou("Já existe um teste em andamento. Aguarde a data de fim para iniciar outro.")
 
         company = s.get(Company, tenant_id)
+        # A versão escolhida vira o padrão da empresa (usada também no card de
+        # /testes) e fica carimbada na campanha, que é quem manda no que o
+        # colaborador responde.
+        versao_escolhida = _versao_valida(versao)
+        if company is not None:
+            company.copsoq_versao = versao_escolhida
         campaign = Campaign(
             id=uuid.uuid4().hex,
             company_id=tenant_id,
-            test_id=COPSOQ_TEST_ID,
+            test_id=copsoq_test_id(versao_escolhida),
             titulo=f"Avaliação NR-1 — {deps.hoje_sp().strftime('%d/%m/%Y')}",
             inicio=datetime.utcnow(),
             fim=_fim_do_dia_utc(fim),

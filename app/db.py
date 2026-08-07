@@ -90,6 +90,9 @@ class Company(Base):
     asaas_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     asaas_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     asaas_erro: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Versão do COPSOQ que a empresa aplica: "curta" (41 itens, padrão) ou
+    # "longa" (119 itens, só quando o cliente pede).
+    copsoq_versao: Mapped[str] = mapped_column(String(10), default="curta")
     signup_ip: Mapped[str] = mapped_column(String(64), default="")
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -126,7 +129,9 @@ class Campaign(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
-    test_id: Mapped[int] = mapped_column(Integer, default=11)
+    # 12 = COPSOQ II versão curta (padrão); 11 = versão longa. A campanha guarda a
+    # versão aplicada, então trocar o padrão não mexe em campanha já criada.
+    test_id: Mapped[int] = mapped_column(Integer, default=12)
     titulo: Mapped[str] = mapped_column(String(200), default="")
     inicio: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     fim: Mapped[datetime] = mapped_column(DateTime)
@@ -389,6 +394,7 @@ def _migrate_companies_columns():
         "signup_ip": "VARCHAR(64)",
         "approved_at": "DATETIME",
         "approved_by": "VARCHAR(64)",
+        "copsoq_versao": "VARCHAR(10)",
     }
     with engine.begin() as conn:
         for nome, tipo in novas.items():
@@ -401,6 +407,12 @@ def _migrate_companies_columns():
         conn.execute(text("UPDATE companies SET signup_ip='' WHERE signup_ip IS NULL"))
         conn.execute(
             text("UPDATE companies SET billing_mode='isento' WHERE billing_mode IS NULL OR billing_mode=''")
+        )
+        # Versão curta vira o padrão para todo mundo, inclusive quem já existia. As
+        # campanhas já criadas guardam o próprio `test_id`, então nada do que está
+        # em andamento (nem do que já foi respondido) muda de versão por causa disto.
+        conn.execute(
+            text("UPDATE companies SET copsoq_versao='curta' WHERE copsoq_versao IS NULL OR copsoq_versao=''")
         )
 
 

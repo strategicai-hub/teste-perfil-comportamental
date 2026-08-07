@@ -13,13 +13,25 @@ from .questions import (
     public_questions as _arch_public_questions,
 )
 from .copsoq import scoring as _copsoq_scoring
-from .copsoq.questions import QUESTION_IDS as _COPSOQ_QIDS, QUESTIONS as _COPSOQ_QUESTIONS
+from .copsoq.questions import (
+    QUESTION_IDS as _COPSOQ_QIDS,
+    QUESTIONS as _COPSOQ_QUESTIONS,
+    QUESTION_IDS_CURTA as _COPSOQ_QIDS_CURTA,
+    QUESTIONS_CURTA as _COPSOQ_QUESTIONS_CURTA,
+)
 
 ARCHETYPE_TEST_ID = 1
-COPSOQ_TEST_ID = 11
+COPSOQ_TEST_ID = 11        # versão longa (119 itens) — só quando o cliente pede
+COPSOQ_CURTO_TEST_ID = 12  # versão curta (41 itens) — PADRÃO
+
+# Os dois ids respondem pelo mesmo teste: entram juntos no painel e no relatório.
+COPSOQ_TEST_IDS = (COPSOQ_TEST_ID, COPSOQ_CURTO_TEST_ID)
+
+# Versão do questionário ("curta" | "longa") ↔ id do teste.
+TEST_ID_POR_VERSAO = {"curta": COPSOQ_CURTO_TEST_ID, "longa": COPSOQ_TEST_ID}
+VERSAO_PADRAO = "curta"
 
 _LIKERT_VALUES = {"1", "2", "3", "4", "5"}
-_COPSOQ_QID_SET = set(_COPSOQ_QIDS)
 _ARCH_QID_SET = set(_ARCH_QIDS)
 
 
@@ -63,7 +75,16 @@ class ArchetypeEngine(TestEngine):
 
 
 class CopsoqEngine(TestEngine):
+    """COPSOQ II. A mesma engine serve as duas versões: a curta usa os mesmos ids
+    de pergunta da longa, só com menos itens."""
+
     kind = "likert"
+
+    def __init__(self, versao: str = "longa"):
+        self.versao = versao
+        self._questions = _COPSOQ_QUESTIONS_CURTA if versao == "curta" else _COPSOQ_QUESTIONS
+        self._qids = _COPSOQ_QIDS_CURTA if versao == "curta" else _COPSOQ_QIDS
+        self._qid_set = set(self._qids)
 
     def public_questions(self):
         return [
@@ -74,17 +95,17 @@ class CopsoqEngine(TestEngine):
                 "scale": q["scale"],
                 "options": q["options"],
             }
-            for q in _COPSOQ_QUESTIONS
+            for q in self._questions
         ]
 
     def question_ids(self):
-        return list(_COPSOQ_QIDS)
+        return list(self._qids)
 
     def valid_value(self, qid, value):
-        return qid in _COPSOQ_QID_SET and value in _LIKERT_VALUES
+        return qid in self._qid_set and value in _LIKERT_VALUES
 
     def score(self, answers):
-        return _copsoq_scoring.calculate(answers)
+        return _copsoq_scoring.calculate(answers, versao=self.versao)
 
 
 # ---------------------------------------------------------------------------
@@ -96,14 +117,26 @@ class CopsoqEngine(TestEngine):
 #     "Perfil Comportamental", que fica com ativo=False até a bateria ser liberada).
 TESTS: list[dict] = [
     {
-        "id": COPSOQ_TEST_ID,
+        "id": COPSOQ_CURTO_TEST_ID,
         "nome": "COPSOQ II — Riscos Psicossociais",
-        "descricao": "Mapeamento dos fatores psicossociais de risco no trabalho (119 questões). Resultado por área e geral.",
+        "descricao": "Mapeamento dos fatores psicossociais de risco no trabalho (41 questões). Resultado por área e geral.",
         "icon": "shield",
         "ativo": True,
         "kind": "likert",
         "empresa": True,
         "grupo": "nr1",
+        "versao": "curta",
+    },
+    {
+        "id": COPSOQ_TEST_ID,
+        "nome": "COPSOQ II — Riscos Psicossociais (versão completa)",
+        "descricao": "Versão longa do COPSOQ II (119 questões), com as 35 dimensões do questionário original. Resultado por área e geral.",
+        "icon": "shield",
+        "ativo": True,
+        "kind": "likert",
+        "empresa": True,
+        "grupo": "nr1",
+        "versao": "longa",
     },
     {"id": 1, "nome": "Perfil Comportamental", "descricao": "Descubra seu arquétipo dominante — Tubarão, Lobo, Águia ou Gato.", "icon": "star", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
     {"id": 2, "nome": "Perfil de Liderança", "descricao": "Os quatro estilos de liderança na organização.", "icon": "crown", "ativo": False, "kind": "choice", "empresa": False, "grupo": "comportamental"},
@@ -119,7 +152,8 @@ TESTS: list[dict] = [
 
 _ENGINES: dict[int, TestEngine] = {
     ARCHETYPE_TEST_ID: ArchetypeEngine(),
-    COPSOQ_TEST_ID: CopsoqEngine(),
+    COPSOQ_TEST_ID: CopsoqEngine("longa"),
+    COPSOQ_CURTO_TEST_ID: CopsoqEngine("curta"),
 }
 
 
@@ -129,6 +163,11 @@ def get_test(test_id: int) -> dict | None:
 
 def get_engine(test_id: int) -> TestEngine | None:
     return _ENGINES.get(test_id)
+
+
+def copsoq_test_id(versao: str | None) -> int:
+    """Id do teste COPSOQ para a versão escolhida pela empresa (padrão: curta)."""
+    return TEST_ID_POR_VERSAO.get((versao or "").strip().lower(), TEST_ID_POR_VERSAO[VERSAO_PADRAO])
 
 
 def is_empresa_test(test_id: int) -> bool:

@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.copsoq import scoring as copsoq_scoring  # noqa: E402
-from app.copsoq.structure import SUBDIMENSIONS  # noqa: E402
+from app.copsoq.structure import SUBDIMENSIONS, SUBDIMENSIONS_CURTA  # noqa: E402
 from app.db import (  # noqa: E402
     Answer,
     Campaign,
@@ -40,7 +40,7 @@ from app.db import (  # noqa: E402
     get_session,
     init_db,
 )
-from app.tests_engine import COPSOQ_TEST_ID  # noqa: E402
+from app.tests_engine import VERSAO_PADRAO, copsoq_test_id  # noqa: E402
 
 SEED = 42
 EMAIL_DOMINIO = "demo.local"
@@ -100,10 +100,10 @@ def _alvo_base(key: str) -> int:
     return ALVO_ATENCAO
 
 
-def _respostas_do_respondente(rnd: random.Random, offset: int) -> dict[str, str]:
-    """Monta as 119 respostas (q1..q119) a partir dos alvos por subescala."""
+def _respostas_do_respondente(rnd: random.Random, offset: int, versao: str) -> dict[str, str]:
+    """Monta as respostas da versão escolhida a partir dos alvos por subescala."""
     respostas: dict[str, str] = {}
-    for sub in SUBDIMENSIONS:
+    for sub in (SUBDIMENSIONS_CURTA if versao == "curta" else SUBDIMENSIONS):
         risco_alvo = max(4, min(96, _alvo_base(sub["key"]) + offset + rnd.randint(-6, 6)))
         # risco → escore da subescala (desfaz a reorientação por direção)
         score = risco_alvo if sub["direcao"] == "risco" else 100 - risco_alvo
@@ -152,7 +152,7 @@ def _limpar_demo(s, company_id: str) -> int:
     return len(leads)
 
 
-def seed(slug: str) -> None:
+def seed(slug: str, versao: str = VERSAO_PADRAO) -> None:
     init_db()
     rnd = random.Random(SEED)
     agora = datetime.utcnow()
@@ -176,7 +176,7 @@ def seed(slug: str) -> None:
         campaign = Campaign(
             id=uuid.uuid4().hex,
             company_id=company.id,
-            test_id=COPSOQ_TEST_ID,
+            test_id=copsoq_test_id(versao),
             titulo="Avaliação NR-1 (demonstração)",
             inicio=agora - timedelta(days=20),
             fim=agora - timedelta(days=1),
@@ -190,13 +190,13 @@ def seed(slug: str) -> None:
                 nome = NOMES[i]
                 primeiro = nome.split()[0].lower()
                 email = f"{primeiro}.{i + 1}@{EMAIL_DOMINIO}"
-                respostas = _respostas_do_respondente(rnd, area["offset"])
+                respostas = _respostas_do_respondente(rnd, area["offset"], versao)
                 concluido = agora - timedelta(days=rnd.randint(2, 15))
 
                 lead = Lead(
                     token=uuid.uuid4().hex,
                     user_id=None,
-                    test_id=COPSOQ_TEST_ID,
+                    test_id=copsoq_test_id(versao),
                     nome=nome.split()[0],
                     sobrenome=" ".join(nome.split()[1:]),
                     whatsapp="",
@@ -206,7 +206,9 @@ def seed(slug: str) -> None:
                     campaign_id=campaign.id,
                     created_at=concluido - timedelta(minutes=20),
                     concluido_em=concluido,
-                    result_json=json.dumps(copsoq_scoring.calculate(respostas), ensure_ascii=False),
+                    result_json=json.dumps(
+                        copsoq_scoring.calculate(respostas, versao=versao), ensure_ascii=False
+                    ),
                 )
                 s.add(lead)
                 for qid, valor in respostas.items():
@@ -269,6 +271,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Respondentes de demonstração do COPSOQ II")
     parser.add_argument("--empresa-slug", help="slug da empresa que vai receber os dados")
     parser.add_argument("--listar", action="store_true", help="lista as empresas cadastradas e sai")
+    parser.add_argument(
+        "--versao", choices=("curta", "longa"), default=VERSAO_PADRAO,
+        help="versao do questionario aplicada na campanha de demonstracao (padrao: curta)",
+    )
     args = parser.parse_args()
 
     if args.listar:
@@ -276,7 +282,7 @@ def main() -> None:
         return
     if not args.empresa_slug:
         parser.error("informe --empresa-slug (ou use --listar para ver as opções)")
-    seed(args.empresa_slug.lower().strip())
+    seed(args.empresa_slug.lower().strip(), args.versao)
 
 
 if __name__ == "__main__":
