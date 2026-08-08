@@ -51,16 +51,21 @@ function responder() {
           body: JSON.stringify({ answers: { [qid]: value } }),
         });
       } catch (_) { /* best-effort */ }
-      // Likert (COPSOQ): avança sozinho para agilizar as 119 questões.
-      if (this.testKind === 'likert' && this.currentIdx < this.questions.length - 1) {
-        setTimeout(() => this.nextQuestion(), 140);
-      }
+      // Sem avanço automático: quem responde confirma no botão "Avançar".
+    },
+
+    // Os botões de opção são reaproveitados entre perguntas (mesma escala), então o
+    // foco do clique anterior fica visível na nova pergunta e parece resposta marcada.
+    _limparFoco() {
+      const el = document.activeElement;
+      if (el && typeof el.blur === 'function') el.blur();
     },
 
     nextQuestion() {
       if (!this.answers[this.currentQid]) { this.error = 'Selecione uma opção para avançar'; return; }
       if (this.currentIdx < this.questions.length - 1) {
         this.currentIdx++;
+        this._limparFoco();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
@@ -68,6 +73,7 @@ function responder() {
     prevQuestion() {
       if (this.currentIdx > 0) {
         this.currentIdx--;
+        this._limparFoco();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },

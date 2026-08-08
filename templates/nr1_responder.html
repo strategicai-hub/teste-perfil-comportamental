@@ -35,7 +35,7 @@
         <p x-show="currentSecao" x-text="currentSecao" class="text-sm font-medium text-teal-700 mb-2"></p>
         <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-6" x-text="currentPrompt"></h2>
         <div class="space-y-3">
-          <template x-for="opt in currentOptions" :key="opt.value + opt.label">
+          <template x-for="opt in currentOptions" :key="currentQid + '|' + opt.value + opt.label">
             <button @click="chooseOption(opt.value)"
               :class="answers[currentQid] === opt.value ? 'border-teal-600 bg-teal-50 ring-2 ring-teal-600' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'"
               class="w-full text-left border-2 rounded-xl px-4 py-3.5 transition">
